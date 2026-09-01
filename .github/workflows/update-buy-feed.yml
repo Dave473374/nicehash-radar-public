@@ -26,19 +26,11 @@ jobs:
 
       - name: Fetch BUY feed
 
-        run: |
-
-          curl --fail --silent --show-error \
-
-            "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed" \
-
-            -o buy-feed.json
+        run: curl --fail --silent --show-error "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed" -o buy-feed.json
 
       - name: Validate JSON
 
-        run: |
-
-          python -m json.tool buy-feed.json > /dev/null
+        run: python -m json.tool buy-feed.json > /dev/null
 
       - name: Commit updated feed
 
