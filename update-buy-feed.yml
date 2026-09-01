@@ -1,0 +1,55 @@
+name: Update NiceHash BUY Feed
+
+on:
+
+  workflow_dispatch:
+
+  schedule:
+
+    - cron: "*/15 * * * *"
+
+permissions:
+
+  contents: write
+
+jobs:
+
+  update-feed:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+
+        uses: actions/checkout@v4
+
+      - name: Fetch BUY feed
+
+        run: |
+
+          curl --fail --silent --show-error \
+
+            "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed" \
+
+            -o buy-feed.json
+
+      - name: Validate JSON
+
+        run: |
+
+          python -m json.tool buy-feed.json > /dev/null
+
+      - name: Commit updated feed
+
+        run: |
+
+          git config user.name "NiceHash Radar Bot"
+
+          git config user.email "actions@github.com"
+
+          git add buy-feed.json
+
+          git diff --cached --quiet || git commit -m "Update BUY feed"
+
+          git push
