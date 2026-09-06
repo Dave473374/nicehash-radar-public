@@ -55,16 +55,7 @@ print("HTTP status:", response.status_code)
 data = response.json()
 rows = data.get("list", [])
 print("Number of rows:", len(rows))
-print("SUMMARY:")
-for row in rows:
-ticket = row.get("currencyAlgoTicket") or {}
-algo = ticket.get("currencyAlgo") or {}
-print(
-"coin=", algo.get("currency"),
-"| status=", row.get("status"),
-"| created=", row.get("createdTs"),
-"| amount=", row.get("fullAmount"),
-"| participants=", row.get("numberOfParticipants"),
-"| duration=", row.get("duration"),
-"| public=", row.get("isPublic")
-)
+print("ROW 1:", rows[0].get("status"), rows[0].get("createdTs"), rows[0].get("fullAmount"), rows[0].get("numberOfParticipants"))
+print("ROW 2:", rows[1].get("status"), rows[1].get("createdTs"), rows[1].get("fullAmount"), rows[1].get("numberOfParticipants"))
+print("ROW 3:", rows[2].get("status"), rows[2].get("createdTs"), rows[2].get("fullAmount"), rows[2].get("numberOfParticipants"))
+print("ROW 4:", rows[3].get("status"), rows[3].get("createdTs"), rows[3].get("fullAmount"), rows[3].get("numberOfParticipants"))
