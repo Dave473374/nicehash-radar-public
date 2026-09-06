@@ -52,4 +52,6 @@ url = HOST + PATH + "?" + QUERY
 response = requests.get(url, headers=headers, timeout=30)
 
 print("HTTP status:", response.status_code)
-print("Response preview:", response.text[:1000])
+data = response.json()
+print("Number of rows:", len(data.get("list", [])))
+print("First row:", data.get("list", [None])[0])
