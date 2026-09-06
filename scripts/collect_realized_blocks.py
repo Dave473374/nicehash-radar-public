@@ -3,15 +3,19 @@ import os
 import urllib.request
 from datetime import datetime, timezone
 
-URL = "https://api2.nicehash.com/hashpower/api/v2/public/solo/singleReward?limit=50&page=0"
+BASE_URL = "https://api2.nicehash.com/hashpower/api/v2/public/solo/singleReward?limit=50&page="
 OUTPUT_FILE = "calibration/realized-blocks.jsonl"
+PAGES = 10
 
-req = urllib.request.Request(URL, headers={"User-Agent": "nicehash-radar-public/1.0", "Accept": "application/json"})
-response = urllib.request.urlopen(req, timeout=30)
-data = json.loads(response.read().decode("utf-8"))
-response.close()
+urls = [BASE_URL + str(page) for page in range(PAGES)]
+requests = [urllib.request.Request(url, headers={"User-Agent": "nicehash-radar-public/1.0", "Accept": "application/json"}) for url in urls]
+responses = [urllib.request.urlopen(req, timeout=30) for req in requests]
+data_pages = [json.loads(response.read().decode("utf-8")) for response in responses]
+[x.close() for x in responses]
 
-blocks = data if isinstance(data, list) else data.get("list") if isinstance(data, dict) and isinstance(data.get("list"), list) else data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), list) else data.get("items") if isinstance(data, dict) and isinstance(data.get("items"), list) else None
+page_blocks = [data if isinstance(data, list) else data.get("list") if isinstance(data, dict) and isinstance(data.get("list"), list) else data.get("data") if isinstance(data, dict) and isinstance(data.get("data"), list) else data.get("items") if isinstance(data, dict) and isinstance(data.get("items"), list) else [] for data in data_pages]
+blocks = [block for page in page_blocks for block in page]
+
 assert isinstance(blocks, list), "Unexpected singleReward response structure"
 
 os.makedirs("calibration", exist_ok=True)
@@ -27,6 +31,8 @@ records = [{"collected_at": datetime.now(timezone.utc).isoformat(), "coin": b.ge
 
 open(OUTPUT_FILE, "a", encoding="utf-8").write("".join(json.dumps(r, separators=(",", ":")) + "\n" for r in records))
 
+print("Pages checked:", PAGES)
 print("Blocks received:", len(blocks))
+print("Unique blocks received:", len(candidates))
 print("New blocks saved:", len(records))
 print("Output:", OUTPUT_FILE)
