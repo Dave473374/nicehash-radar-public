@@ -53,12 +53,18 @@ response = requests.get(url, headers=headers, timeout=30)
 
 print("HTTP status:", response.status_code)
 data = response.json()
-print("Number of rows:", len(data.get("list", [])))
-row = data.get("list", [None])[0]
-print("name:", row.get("name"))
-print("status:", row.get("status"))
-print("createdTs:", row.get("createdTs"))
-print("duration:", row.get("duration"))
-print("fullAmount:", row.get("fullAmount"))
-print("numberOfParticipants:", row.get("numberOfParticipants"))
-print("isPublic:", row.get("isPublic"))
+rows = data.get("list", [])
+print("Number of rows:", len(rows))
+print("SUMMARY:")
+for row in rows:
+ticket = row.get("currencyAlgoTicket") or {}
+algo = ticket.get("currencyAlgo") or {}
+print(
+"coin=", algo.get("currency"),
+"| status=", row.get("status"),
+"| created=", row.get("createdTs"),
+"| amount=", row.get("fullAmount"),
+"| participants=", row.get("numberOfParticipants"),
+"| duration=", row.get("duration"),
+"| public=", row.get("isPublic")
+)
