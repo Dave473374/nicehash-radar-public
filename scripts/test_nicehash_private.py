@@ -6,7 +6,6 @@ import hashlib
 import requests
 
 HOST = "https://api2.nicehash.com"
-
 API_KEY = os.environ["NICEHASH_API_KEY"]
 API_SECRET = os.environ["NICEHASH_API_SECRET"]
 ORG_ID = os.environ["NICEHASH_ORG_ID"]
@@ -50,34 +49,7 @@ headers = {
 }
 
 url = HOST + PATH + "?" + QUERY
-
 response = requests.get(url, headers=headers, timeout=30)
 
 print("HTTP status:", response.status_code)
-
-try:
-data = response.json()
-
-if isinstance(data, dict):
-print("Top-level keys:", list(data.keys()))
-
-rows = data.get("list")
-
-if isinstance(rows, list):
-print("Number of rows:", len(rows))
-
-for row in rows[:3]:
-print({
-"id": row.get("id"),
-"name": row.get("name"),
-"status": row.get("status"),
-"createdTs": row.get("createdTs"),
-"packageName": row.get("packageName")
-})
-else:
-print("Response:", data)
-else:
-print("Response type:", type(data).__name__)
-
-except Exception:
-print("Non-JSON response:", response.text[:500])
+print("Response preview:", response.text[:1000])
