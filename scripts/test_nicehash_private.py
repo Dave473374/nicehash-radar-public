@@ -11,8 +11,8 @@ API_SECRET = os.environ["NICEHASH_API_SECRET"]
 ORG_ID = os.environ["NICEHASH_ORG_ID"]
 
 METHOD = "GET"
-PATH = "/hashpower/api/v2/hashpower/solo/shared/order"
-QUERY = "page=0&limit=100&sortDir=DESC&sortField=createdTs&onlyGold=false"
+PATH = "/hashpower/api/v2/hashpower/solo/order"
+QUERY = "active=false&page=0&limit=12"
 
 XTIMESTAMP = str(int(time.time() * 1000))
 XNONCE = str(uuid.uuid4())
