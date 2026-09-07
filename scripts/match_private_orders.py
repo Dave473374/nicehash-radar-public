@@ -6,15 +6,11 @@ PRIVATE_ORDERS = Path("/tmp/nicehash-completed-orders.json")
 RADAR_HISTORY = Path("calibration/radar-snapshots.jsonl")
 OUTPUT = Path("/tmp/private-order-matches.json")
 
-MAX_SNAPSHOT_AGE_SECONDS = 2 * 60 * 60
+MAX_SNAPSHOT_AGE_SECONDS = 7200
 
-parse_ts = lambda x: datetime.fromisoformat(
-str(x).replace("Z", "+00:00")
-) if x else None
+parse_ts = lambda x: datetime.fromisoformat(str(x).replace("Z", "+00:00")) if x else None
 
-orders = json.loads(
-PRIVATE_ORDERS.read_text(encoding="utf-8")
-).get("list", [])
+orders = json.loads(PRIVATE_ORDERS.read_text(encoding="utf-8")).get("list", [])
 
 snapshots = [
 json.loads(line)
@@ -28,57 +24,20 @@ for s in snapshots
 if parse_ts(s.get("collected_at")) is not None
 ]
 
-matches = []
-
-for order in orders:
-order_time = parse_ts(order.get("startTs"))
-
-if order_time is None:
-continue
-
-candidates = [
-(ts, snap)
-for ts, snap in snapshot_points
-if ts <= order_time
-and (order_time - ts).total_seconds() <= MAX_SNAPSHOT_AGE_SECONDS
-]
-
-if not candidates:
-continue
-
-best_time, best_snapshot = max(
-candidates,
-key=lambda x: x[0]
-)
-
-package = next(
+make_match = lambda order: next(
 (
-p
-for p in (best_snapshot.get("feed", {}).get("packages") or [])
-if p.get("name") == order.get("packageName")
-and (p.get("primary_chain") or {}).get("currency")
-== order.get("soloMiningCoin")
-),
-None
-)
-
-if package is None:
-continue
-
-rewards = order.get("soloMiningRewards") or []
-
-matches.append({
+{
 "orderStartTs": order.get("startTs"),
 "orderEndTs": order.get("endTs"),
 "packageName": order.get("packageName"),
 "coin": order.get("soloMiningCoin"),
 "packagePriceBtc": order.get("packagePrice"),
 "closeToRewardPct": order.get("soloMiningSharesMaxPercent"),
-"rewardCount": len(rewards),
-"hadReward": len(rewards) > 0,
-"snapshotCollectedAt": best_snapshot.get("collected_at"),
+"rewardCount": len(order.get("soloMiningRewards") or []),
+"hadReward": len(order.get("soloMiningRewards") or []) > 0,
+"snapshotCollectedAt": snap.get("collected_at"),
 "snapshotAgeMinutes": round(
-(order_time - best_time).total_seconds() / 60,
+(parse_ts(order.get("startTs")) - ts).total_seconds() / 60,
 2
 ),
 "radarPriceBtc": package.get("price_btc"),
@@ -91,7 +50,33 @@ package.get("profitability") or {}
 "qualityVs24hPercent": (
 package.get("history_trend") or {}
 ).get("expected_blocks_per_btc_vs_24h_percent")
-})
+}
+for ts, snap in sorted(
+[
+(ts, snap)
+for ts, snap in snapshot_points
+if ts <= parse_ts(order.get("startTs"))
+and (
+parse_ts(order.get("startTs")) - ts
+).total_seconds() <= MAX_SNAPSHOT_AGE_SECONDS
+],
+key=lambda x: x[0],
+reverse=True
+)
+for package in (snap.get("feed", {}).get("packages") or [])
+if package.get("name") == order.get("packageName")
+and (package.get("primary_chain") or {}).get("currency")
+== order.get("soloMiningCoin")
+),
+None
+)
+
+matches = [
+match
+for order in orders
+if parse_ts(order.get("startTs")) is not None
+if (match := make_match(order)) is not None
+]
 
 result = {
 "completedOrders": len(orders),
@@ -101,19 +86,12 @@ result = {
 }
 
 OUTPUT.write_text(
-json.dumps(
-result,
-separators=(",", ":"),
-ensure_ascii=False
-),
+json.dumps(result, separators=(",", ":"), ensure_ascii=False),
 encoding="utf-8"
 )
 
 print("Completed orders:", len(orders))
 print("Radar snapshots:", len(snapshots))
 print("Valid matched orders:", len(matches))
-print(
-"Matched rewards:",
-sum(1 for x in matches if x.get("hadReward"))
-)
+print("Matched rewards:", sum(1 for x in matches if x.get("hadReward")))
 print("Private Radar calibration matcher completed successfully")
