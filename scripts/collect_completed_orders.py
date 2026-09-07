@@ -1,0 +1,68 @@
+import os
+import time
+import uuid
+import hmac
+import hashlib
+import json
+from pathlib import Path
+import requests
+
+HOST = "https://api2.nicehash.com"
+API_KEY = os.environ["NICEHASH_API_KEY"]
+API_SECRET = os.environ["NICEHASH_API_SECRET"]
+ORG_ID = os.environ["NICEHASH_ORG_ID"]
+
+METHOD = "GET"
+PATH = "/hashpower/api/v2/hashpower/solo/order"
+QUERY = "active=false&page=0&limit=100"
+
+XTIMESTAMP = str(int(time.time() * 1000))
+XNONCE = str(uuid.uuid4())
+
+message = bytearray(API_KEY, "utf-8")
+message += b"\x00"
+message += bytearray(XTIMESTAMP, "utf-8")
+message += b"\x00"
+message += bytearray(XNONCE, "utf-8")
+message += b"\x00"
+message += b"\x00"
+message += bytearray(ORG_ID, "utf-8")
+message += b"\x00"
+message += b"\x00"
+message += bytearray(METHOD, "utf-8")
+message += b"\x00"
+message += bytearray(PATH, "utf-8")
+message += b"\x00"
+message += bytearray(QUERY, "utf-8")
+
+digest = hmac.new(
+bytearray(API_SECRET, "utf-8"),
+message,
+hashlib.sha256
+).hexdigest()
+
+headers = {
+"X-Time": XTIMESTAMP,
+"X-Nonce": XNONCE,
+"X-Auth": API_KEY + ":" + digest,
+"X-Organization-Id": ORG_ID,
+"X-Request-Id": str(uuid.uuid4()),
+"Content-Type": "application/json"
+}
+
+url = HOST + PATH + "?" + QUERY
+response = requests.get(url, headers=headers, timeout=30)
+response.raise_for_status()
+
+data = response.json()
+rows = data.get("list", [])
+
+temp_file = Path("/tmp/nicehash-completed-orders.json")
+temp_file.write_text(
+json.dumps({"list": rows}, separators=(",", ":")),
+encoding="utf-8"
+)
+
+print("HTTP status:", response.status_code)
+print("Private EasyMining history fetched successfully")
+print("Temporary calibration input created")
