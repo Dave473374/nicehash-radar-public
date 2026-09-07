@@ -12,7 +12,7 @@ ORG_ID = os.environ["NICEHASH_ORG_ID"]
 
 METHOD = "GET"
 PATH = "/hashpower/api/v2/hashpower/solo/shared/order"
-QUERY = "rewardsOnly=true&claimed=true&limit=100&page=0"
+QUERY = "page=0&limit=100&sortDir=DESC&sortField=createdTs&onlyGold=false"
 
 XTIMESTAMP = str(int(time.time() * 1000))
 XNONCE = str(uuid.uuid4())
