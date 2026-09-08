@@ -3,7 +3,8 @@ import urllib.request
 from pathlib import Path
 
 URL = "https://api2.nicehash.com/hashpower/api/v2/public/solo/singleReward?limit=100&page=0"
-OUTPUT = Path("recent-blocks.json")
+LATEST = Path("recent-blocks.json")
+HISTORY = Path("recent-blocks-history.json")
 
 request = urllib.request.Request(
 URL,
@@ -16,7 +17,7 @@ headers={
 response = urllib.request.urlopen(request, timeout=30)
 data = json.loads(response.read().decode("utf-8"))
 
-cleaned = [
+latest = [
 {
 "coin": item.get("coin"),
 "blockHeight": item.get("blockHeight"),
@@ -32,9 +33,30 @@ cleaned = [
 for item in data
 ]
 
-OUTPUT.write_text(
-json.dumps(cleaned, indent=2, ensure_ascii=False),
+old_history = json.loads(HISTORY.read_text(encoding="utf-8")) if HISTORY.exists() else []
+
+combined = old_history + latest
+
+unique = {
+str(item.get("coin")) + "|" + str(item.get("blockHash")) + "|" + str(item.get("packageId")): item
+for item in combined
+}
+
+history = sorted(
+unique.values(),
+key=lambda item: item.get("time") or 0,
+reverse=True
+)
+
+LATEST.write_text(
+json.dumps(latest, indent=2, ensure_ascii=False),
 encoding="utf-8"
 )
 
-print("OK: saved", len(cleaned), "NiceHash rewards to", OUTPUT)
+HISTORY.write_text(
+json.dumps(history, indent=2, ensure_ascii=False),
+encoding="utf-8"
+)
+
+print("Latest rewards:", len(latest))
+print("Total historical rewards:", len(history))
