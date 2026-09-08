@@ -3,8 +3,7 @@ import urllib.request
 from pathlib import Path
 
 URL = "https://api2.nicehash.com/hashpower/api/v2/public/solo/singleReward?limit=100&page=0"
-LATEST = Path("recent-blocks.json")
-HISTORY = Path("recent-blocks-history.json")
+OUTPUT = Path("recent-blocks.json")
 
 request = urllib.request.Request(
 URL,
@@ -33,9 +32,9 @@ latest = [
 for item in data
 ]
 
-old_history = json.loads(HISTORY.read_text(encoding="utf-8")) if HISTORY.exists() else []
+old = json.loads(OUTPUT.read_text(encoding="utf-8")) if OUTPUT.exists() else []
 
-combined = old_history + latest
+combined = old + latest
 
 unique = {
 str(item.get("coin")) + "|" + str(item.get("blockHash")) + "|" + str(item.get("packageId")): item
@@ -48,15 +47,10 @@ key=lambda item: item.get("time") or 0,
 reverse=True
 )
 
-LATEST.write_text(
-json.dumps(latest, indent=2, ensure_ascii=False),
-encoding="utf-8"
-)
-
-HISTORY.write_text(
+OUTPUT.write_text(
 json.dumps(history, indent=2, ensure_ascii=False),
 encoding="utf-8"
 )
 
-print("Latest rewards:", len(latest))
-print("Total historical rewards:", len(history))
+print("Fetched now:", len(latest))
+print("Total stored history:", len(history))
