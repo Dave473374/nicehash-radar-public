@@ -205,4 +205,5 @@ r.get("merged_mining") is True and r.get("radar_matched") is True
 for r in records
 ))
 print("Merged event details:", json.dumps([{"event_id": r.get("event_id"), "package_name": r.get("package_name"), "coins": r.get("coins"), "reward_count": r.get("reward_count"), "snapshot_found": r.get("snapshot_found"), "package_match_found": r.get("package_match_found"), "radar_matched": r.get("radar_matched")} for r in records if r.get("merged_mining") is True], ensure_ascii=False))
+print("Merged snapshot packages:", json.dumps([{"event_id": e.get("eventId"), "event_time": e.get("time"), "event_package": e.get("packageName"), "snapshot_time": s.get("collected_at") if s is not None else None, "snapshot_packages": [p0.get("name") for p0 in s.get("feed", {}).get("packages", [])] if s is not None else []} for e, s, p in triples if e.get("mergedMining") is True], ensure_ascii=False))
 print("Output:", OUTPUT_FILE)
