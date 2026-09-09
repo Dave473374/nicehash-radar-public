@@ -15,7 +15,9 @@ events = json.load(
 open(EVENTS_FILE, encoding="utf-8")
 )
 
-parse_time = lambda x: datetime.fromisoformat(x.replace("Z", "+00:00"))
+parse_time = lambda x: datetime.fromisoformat(
+x.replace("Z", "+00:00")
+)
 
 snapshot_times = [
 (parse_time(s["collected_at"]), s)
@@ -30,7 +32,9 @@ tz=timezone.utc
 latest_snapshot = lambda t: max(
 ((st, s) for st, s in snapshot_times if st <= t),
 default=(None, None),
-key=lambda x: x[0] if x[0] is not None else datetime.min.replace(tzinfo=timezone.utc)
+key=lambda x: x[0]
+if x[0] is not None
+else datetime.min.replace(tzinfo=timezone.utc)
 )[1]
 
 package_for = lambda s, name: next(
@@ -49,15 +53,14 @@ if e.get("time")
 ]
 
 triples = [
-(e, s, package_for(s, e.get("packageName")))
-for e, s in pairs
+(
+e,
+s,
+package_for(s, e.get("packageName"))
 if s is not None
-]
-
-triples = [
-(e, s, p)
-for e, s, p in triples
-if p is not None
+else None
+)
+for e, s in pairs
 ]
 
 records = [
@@ -70,42 +73,112 @@ records = [
 "reward_count": e.get("rewardCount"),
 "merged_mining": e.get("mergedMining"),
 "total_payout_reward_btc": e.get("totalPayoutRewardBtc"),
+"rewards": e.get("rewards"),
 
-"snapshot_time": s.get("collected_at"),
+"snapshot_found": s is not None,
+"package_match_found": p is not None,
+"radar_matched": s is not None and p is not None,
+
+"snapshot_time": s.get("collected_at")
+if s is not None
+else None,
+
 "snapshot_age_seconds": round(
 (event_time(e) - parse_time(s.get("collected_at"))).total_seconds(),
 1
-),
-
-"price_btc": p.get("price_btc"),
-"primary_coin": p.get("primary_chain", {}).get("currency"),
-"merge_coin": p.get("merge_chain", {}).get("currency")
-if p.get("merge_chain")
+)
+if s is not None
 else None,
 
-"mining_signal": p.get("mining_signal"),
-"economic_signal": p.get("economic_signal"),
-"final_signal": p.get("final_signal"),
-"decision": p.get("decision"),
+"price_btc": p.get("price_btc")
+if p is not None
+else None,
 
-"expected_blocks": p.get("primary_chain", {}).get("expected_blocks"),
-"model_hit_probability_percent": p.get("primary_chain", {}).get("model_hit_probability_percent"),
-"nicehash_odds": p.get("nicehash_odds", {}).get("display"),
+"primary_coin": p.get("primary_chain", {}).get("currency")
+if p is not None
+else None,
 
-"expected_reward_btc_equiv": p.get("profitability", {}).get("expected_reward_btc_equiv"),
-"expected_return_percent": p.get("profitability", {}).get("expected_return_percent"),
-"profitability_margin_percent": p.get("profitability", {}).get("profitability_margin_percent"),
+"merge_coin": (
+p.get("merge_chain", {}).get("currency")
+if p is not None and p.get("merge_chain")
+else None
+),
 
-"break_even_block_target": p.get("profitability", {}).get("break_even_block_target"),
-"break_even_multiple_vs_expected_blocks": p.get("profitability", {}).get("break_even_multiple_vs_expected_blocks"),
-"break_even_probability_percent": p.get("profitability", {}).get("break_even_probability_percent_approx"),
-"break_even_risk": p.get("profitability", {}).get("break_even_risk", {}).get("status"),
-"break_even_cap": p.get("profitability", {}).get("break_even_risk", {}).get("max_final_signal"),
+"mining_signal": p.get("mining_signal")
+if p is not None
+else None,
 
-"quality_vs_24h_percent": p.get("history_trend", {}).get("expected_blocks_per_btc_vs_24h_percent"),
-"quality_vs_7d_percent": p.get("history_trend", {}).get("expected_blocks_per_btc_vs_7d_percent"),
-"history_samples_24h": p.get("history_trend", {}).get("sample_count_24h"),
+"economic_signal": p.get("economic_signal")
+if p is not None
+else None,
+
+"final_signal": p.get("final_signal")
+if p is not None
+else None,
+
+"decision": p.get("decision")
+if p is not None
+else None,
+
+"expected_blocks": p.get("primary_chain", {}).get("expected_blocks")
+if p is not None
+else None,
+
+"model_hit_probability_percent": p.get("primary_chain", {}).get("model_hit_probability_percent")
+if p is not None
+else None,
+
+"nicehash_odds": p.get("nicehash_odds", {}).get("display")
+if p is not None
+else None,
+
+"expected_reward_btc_equiv": p.get("profitability", {}).get("expected_reward_btc_equiv")
+if p is not None
+else None,
+
+"expected_return_percent": p.get("profitability", {}).get("expected_return_percent")
+if p is not None
+else None,
+
+"profitability_margin_percent": p.get("profitability", {}).get("profitability_margin_percent")
+if p is not None
+else None,
+
+"break_even_block_target": p.get("profitability", {}).get("break_even_block_target")
+if p is not None
+else None,
+
+"break_even_multiple_vs_expected_blocks": p.get("profitability", {}).get("break_even_multiple_vs_expected_blocks")
+if p is not None
+else None,
+
+"break_even_probability_percent": p.get("profitability", {}).get("break_even_probability_percent_approx")
+if p is not None
+else None,
+
+"break_even_risk": p.get("profitability", {}).get("break_even_risk", {}).get("status")
+if p is not None
+else None,
+
+"break_even_cap": p.get("profitability", {}).get("break_even_risk", {}).get("max_final_signal")
+if p is not None
+else None,
+
+"quality_vs_24h_percent": p.get("history_trend", {}).get("expected_blocks_per_btc_vs_24h_percent")
+if p is not None
+else None,
+
+"quality_vs_7d_percent": p.get("history_trend", {}).get("expected_blocks_per_btc_vs_7d_percent")
+if p is not None
+else None,
+
+"history_samples_24h": p.get("history_trend", {}).get("sample_count_24h")
+if p is not None
+else None,
+
 "history_samples_7d": p.get("history_trend", {}).get("sample_count_7d")
+if p is not None
+else None
 }
 for e, s, p in triples
 ]
@@ -123,6 +196,12 @@ for r in records
 
 print("Radar snapshots:", len(snapshots))
 print("Mining events:", len(events))
-print("Matched mining events:", len(records))
-print("Merged mining matches:", sum(r.get("merged_mining") is True for r in records))
+print("Events written:", len(records))
+print("Radar matched events:", sum(r.get("radar_matched") is True for r in records))
+print("Unmatched events:", sum(r.get("radar_matched") is False for r in records))
+print("Merged mining events:", sum(r.get("merged_mining") is True for r in records))
+print("Merged radar matches:", sum(
+r.get("merged_mining") is True and r.get("radar_matched") is True
+for r in records
+))
 print("Output:", OUTPUT_FILE)
