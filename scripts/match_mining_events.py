@@ -204,4 +204,5 @@ print("Merged radar matches:", sum(
 r.get("merged_mining") is True and r.get("radar_matched") is True
 for r in records
 ))
+print("Merged event details:", json.dumps([{"event_id": r.get("event_id"), "package_name": r.get("package_name"), "coins": r.get("coins"), "reward_count": r.get("reward_count"), "snapshot_found": r.get("snapshot_found"), "package_match_found": r.get("package_match_found"), "radar_matched": r.get("radar_matched")} for r in records if r.get("merged_mining") is True], ensure_ascii=False))
 print("Output:", OUTPUT_FILE)
