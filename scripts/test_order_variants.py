@@ -32,20 +32,25 @@ d = r.json()
 rows = d.get("list", [])
 first = rows[0] if rows else {}
 
-details = first.get("orderDetails")
-members = first.get("members")
+members = first.get("members") or []
+member = members[0] if members else {}
+
+reward_amount = member.get("rewardAmount")
+rewards = member.get("rewards")
 
 print("HTTP", r.status_code)
 print("COMPLETED rows", len(rows))
 
-print("orderDetails type:", type(details).__name__)
-print("orderDetails keys:", sorted(details.keys()) if isinstance(details, dict) else [])
-print("orderDetails count:", len(details) if isinstance(details, list) else 0)
-print("orderDetails item type:", type(details[0]).__name__ if isinstance(details, list) and details else "none")
-print("orderDetails item keys:", sorted(details[0].keys()) if isinstance(details, list) and details and isinstance(details[0], dict) else [])
+print("rewardAmount type:", type(reward_amount).__name__)
 
-print("members type:", type(members).__name__)
-print("members keys:", sorted(members.keys()) if isinstance(members, dict) else [])
-print("members count:", len(members) if isinstance(members, list) else 0)
-print("members item type:", type(members[0]).__name__ if isinstance(members, list) and members else "none")
-print("members item keys:", sorted(members[0].keys()) if isinstance(members, list) and members and isinstance(members[0], dict) else [])
+print("rewards type:", type(rewards).__name__)
+print("rewards count:", len(rewards) if isinstance(rewards, list) else 0)
+print("rewards item type:", type(rewards[0]).__name__ if isinstance(rewards, list) and rewards else "none")
+print("rewards item keys:", sorted(rewards[0].keys()) if isinstance(rewards, list) and rewards and isinstance(rewards[0], dict) else [])
+
+order_details = first.get("orderDetails") or {}
+
+print("packagePrice type:", type(order_details.get("packagePrice")).__name__)
+print("payedAmount type:", type(order_details.get("payedAmount")).__name__)
+print("soloMiningCoin type:", type(order_details.get("soloMiningCoin")).__name__)
+print("soloMiningSharesMaxPercent type:", type(order_details.get("soloMiningSharesMaxPercent")).__name__)
