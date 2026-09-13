@@ -10,78 +10,87 @@ KEY = os.environ["NICEHASH_API_KEY"]
 SECRET = os.environ["NICEHASH_API_SECRET"].encode()
 ORG = os.environ["NICEHASH_ORG_ID"]
 PATH = "/hashpower/api/v2/hashpower/solo/shared/order"
-QUERY = "status=COMPLETED&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
 
+status = "COMPLETED"
+query = "status=" + status + "&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
 ts = str(int(time.time() * 1000))
 nonce = str(uuid.uuid4())
 reqid = str(uuid.uuid4())
-
-msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", PATH, QUERY]).encode()
+msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", PATH, query]).encode()
 sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
-
-headers = {
-"X-Time": ts,
-"X-Nonce": nonce,
-"X-Auth": KEY + ":" + sig,
-"X-Organization-Id": ORG,
-"X-Request-Id": reqid
-}
-
-r = requests.get(BASE + PATH + "?" + QUERY, headers=headers, timeout=30)
+headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
+r = requests.get(BASE + PATH + "?" + query, headers=headers, timeout=30)
 d = r.json()
 rows = d.get("list", [])
+reward_values = [float(m.get("rewardAmount") or 0) for row in rows for m in (row.get("members") or [])]
+print(status, "| HTTP", r.status_code, "| rows", len(rows), "| returned statuses", sorted(set(str(x.get("status")) for x in rows)), "| reward hits", sum(x > 0 for x in reward_values))
 
-members = [
-m
-for row in rows
-for m in (row.get("members") or [])
-if isinstance(m, dict)
-]
+status = "FINISHED"
+query = "status=" + status + "&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
+ts = str(int(time.time() * 1000))
+nonce = str(uuid.uuid4())
+reqid = str(uuid.uuid4())
+msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", PATH, query]).encode()
+sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
+headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
+r = requests.get(BASE + PATH + "?" + query, headers=headers, timeout=30)
+d = r.json()
+rows = d.get("list", [])
+reward_values = [float(m.get("rewardAmount") or 0) for row in rows for m in (row.get("members") or [])]
+print(status, "| HTTP", r.status_code, "| rows", len(rows), "| returned statuses", sorted(set(str(x.get("status")) for x in rows)), "| reward hits", sum(x > 0 for x in reward_values))
 
-reward_amounts = [
-float(m.get("rewardAmount") or 0)
-for m in members
-]
+status = "SUCCESS"
+query = "status=" + status + "&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
+ts = str(int(time.time() * 1000))
+nonce = str(uuid.uuid4())
+reqid = str(uuid.uuid4())
+msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", PATH, query]).encode()
+sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
+headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
+r = requests.get(BASE + PATH + "?" + query, headers=headers, timeout=30)
+d = r.json()
+rows = d.get("list", [])
+reward_values = [float(m.get("rewardAmount") or 0) for row in rows for m in (row.get("members") or [])]
+print(status, "| HTTP", r.status_code, "| rows", len(rows), "| returned statuses", sorted(set(str(x.get("status")) for x in rows)), "| reward hits", sum(x > 0 for x in reward_values))
 
-reward_members = [
-m
-for m in members
-if float(m.get("rewardAmount") or 0) > 0
-]
+status = "REWARDED"
+query = "status=" + status + "&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
+ts = str(int(time.time() * 1000))
+nonce = str(uuid.uuid4())
+reqid = str(uuid.uuid4())
+msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", PATH, query]).encode()
+sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
+headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
+r = requests.get(BASE + PATH + "?" + query, headers=headers, timeout=30)
+d = r.json()
+rows = d.get("list", [])
+reward_values = [float(m.get("rewardAmount") or 0) for row in rows for m in (row.get("members") or [])]
+print(status, "| HTTP", r.status_code, "| rows", len(rows), "| returned statuses", sorted(set(str(x.get("status")) for x in rows)), "| reward hits", sum(x > 0 for x in reward_values))
 
-reward_records = [
-reward
-for m in members
-for reward in (m.get("rewards") or [])
-]
+status = "EXPIRED"
+query = "status=" + status + "&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
+ts = str(int(time.time() * 1000))
+nonce = str(uuid.uuid4())
+reqid = str(uuid.uuid4())
+msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", PATH, query]).encode()
+sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
+headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
+r = requests.get(BASE + PATH + "?" + query, headers=headers, timeout=30)
+d = r.json()
+rows = d.get("list", [])
+reward_values = [float(m.get("rewardAmount") or 0) for row in rows for m in (row.get("members") or [])]
+print(status, "| HTTP", r.status_code, "| rows", len(rows), "| returned statuses", sorted(set(str(x.get("status")) for x in rows)), "| reward hits", sum(x > 0 for x in reward_values))
 
-packages_with_reward = [
-row
-for row in rows
-if any(
-float(m.get("rewardAmount") or 0) > 0
-for m in (row.get("members") or [])
-if isinstance(m, dict)
-)
-]
-
-rewarding_members_per_package = [
-sum(
-1
-for m in (row.get("members") or [])
-if isinstance(m, dict)
-and float(m.get("rewardAmount") or 0) > 0
-)
-for row in rows
-]
-
-print("HTTP", r.status_code)
-print("COMPLETED packages", len(rows))
-print("TOTAL members", len(members))
-print("PACKAGES with rewardAmount > 0", len(packages_with_reward))
-print("PACKAGES without reward", len(rows) - len(packages_with_reward))
-print("MEMBERS with rewardAmount > 0", len(reward_members))
-print("TOTAL rewards records", len(reward_records))
-print("MIN rewardAmount", min(reward_amounts) if reward_amounts else 0)
-print("MAX rewardAmount", max(reward_amounts) if reward_amounts else 0)
-print("REWARDING members per package", rewarding_members_per_package)
+status = "CANCELLED"
+query = "status=" + status + "&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
+ts = str(int(time.time() * 1000))
+nonce = str(uuid.uuid4())
+reqid = str(uuid.uuid4())
+msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", PATH, query]).encode()
+sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
+headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
+r = requests.get(BASE + PATH + "?" + query, headers=headers, timeout=30)
+d = r.json()
+rows = d.get("list", [])
+reward_values = [float(m.get("rewardAmount") or 0) for row in rows for m in (row.get("members") or [])]
+print(status, "| HTTP", r.status_code, "| rows", len(rows), "| returned statuses", sorted(set(str(x.get("status")) for x in rows)), "| reward hits", sum(x > 0 for x in reward_values))
