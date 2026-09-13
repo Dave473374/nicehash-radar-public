@@ -30,27 +30,58 @@ headers = {
 r = requests.get(BASE + PATH + "?" + QUERY, headers=headers, timeout=30)
 d = r.json()
 rows = d.get("list", [])
-first = rows[0] if rows else {}
 
-members = first.get("members") or []
-member = members[0] if members else {}
+members = [
+m
+for row in rows
+for m in (row.get("members") or [])
+if isinstance(m, dict)
+]
 
-reward_amount = member.get("rewardAmount")
-rewards = member.get("rewards")
+reward_amounts = [
+float(m.get("rewardAmount") or 0)
+for m in members
+]
+
+reward_members = [
+m
+for m in members
+if float(m.get("rewardAmount") or 0) > 0
+]
+
+reward_records = [
+reward
+for m in members
+for reward in (m.get("rewards") or [])
+]
+
+packages_with_reward = [
+row
+for row in rows
+if any(
+float(m.get("rewardAmount") or 0) > 0
+for m in (row.get("members") or [])
+if isinstance(m, dict)
+)
+]
+
+rewarding_members_per_package = [
+sum(
+1
+for m in (row.get("members") or [])
+if isinstance(m, dict)
+and float(m.get("rewardAmount") or 0) > 0
+)
+for row in rows
+]
 
 print("HTTP", r.status_code)
-print("COMPLETED rows", len(rows))
-
-print("rewardAmount type:", type(reward_amount).__name__)
-
-print("rewards type:", type(rewards).__name__)
-print("rewards count:", len(rewards) if isinstance(rewards, list) else 0)
-print("rewards item type:", type(rewards[0]).__name__ if isinstance(rewards, list) and rewards else "none")
-print("rewards item keys:", sorted(rewards[0].keys()) if isinstance(rewards, list) and rewards and isinstance(rewards[0], dict) else [])
-
-order_details = first.get("orderDetails") or {}
-
-print("packagePrice type:", type(order_details.get("packagePrice")).__name__)
-print("payedAmount type:", type(order_details.get("payedAmount")).__name__)
-print("soloMiningCoin type:", type(order_details.get("soloMiningCoin")).__name__)
-print("soloMiningSharesMaxPercent type:", type(order_details.get("soloMiningSharesMaxPercent")).__name__)
+print("COMPLETED packages", len(rows))
+print("TOTAL members", len(members))
+print("PACKAGES with rewardAmount > 0", len(packages_with_reward))
+print("PACKAGES without reward", len(rows) - len(packages_with_reward))
+print("MEMBERS with rewardAmount > 0", len(reward_members))
+print("TOTAL rewards records", len(reward_records))
+print("MIN rewardAmount", min(reward_amounts) if reward_amounts else 0)
+print("MAX rewardAmount", max(reward_amounts) if reward_amounts else 0)
+print("REWARDING members per package", rewarding_members_per_package)
