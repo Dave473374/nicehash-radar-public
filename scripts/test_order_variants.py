@@ -10,53 +10,47 @@ KEY = os.environ["NICEHASH_API_KEY"]
 SECRET = os.environ["NICEHASH_API_SECRET"].encode()
 ORG = os.environ["NICEHASH_ORG_ID"]
 
-SHARED_PATH = "/hashpower/api/v2/hashpower/solo/shared/order"
-SHARED_QUERY = "status=COMPLETED&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
+PATH = "/hashpower/api/v2/hashpower/solo/shared/order"
+QUERY = "page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
 
 ts = str(int(time.time() * 1000))
 nonce = str(uuid.uuid4())
 reqid = str(uuid.uuid4())
-msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", SHARED_PATH, SHARED_QUERY]).encode()
+
+msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", PATH, QUERY]).encode()
 sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
-headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
-shared_r = requests.get(BASE + SHARED_PATH + "?" + SHARED_QUERY, headers=headers, timeout=30)
-shared_rows = shared_r.json().get("list", [])
 
-OWN_PATH = "/hashpower/api/v2/hashpower/solo/order"
-OWN_QUERY = "active=false&page=0&limit=100"
+headers = {
+"X-Time": ts,
+"X-Nonce": nonce,
+"X-Auth": KEY + ":" + sig,
+"X-Organization-Id": ORG,
+"X-Request-Id": reqid
+}
 
-ts = str(int(time.time() * 1000))
-nonce = str(uuid.uuid4())
-reqid = str(uuid.uuid4())
-msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", OWN_PATH, OWN_QUERY]).encode()
-sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
-headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
-own_r = requests.get(BASE + OWN_PATH + "?" + OWN_QUERY, headers=headers, timeout=30)
-own_rows = own_r.json().get("list", [])
+r = requests.get(BASE + PATH + "?" + QUERY, headers=headers, timeout=30)
+d = r.json()
+rows = d.get("list", [])
 
-shared_ticket_ids = [str((x.get("orderDetails") or {}).get("soloTicketId") or "") for x in shared_rows]
-own_ticket_ids = [str(x.get("soloTicketId") or "") for x in own_rows]
+ids = [str(x.get("id") or "") for x in rows]
+statuses = [str(x.get("status") or "") for x in rows]
+created = [str(x.get("createdTs") or "") for x in rows]
+durations = [x.get("duration") for x in rows]
+participants = [x.get("numberOfParticipants") for x in rows]
+probabilities = [x.get("probability") for x in rows]
+merge_probabilities = [x.get("mergeProbability") for x in rows]
+public_flags = [x.get("isPublic") for x in rows]
 
-valid_shared_ids = [x for x in shared_ticket_ids if x]
-valid_own_ids = [x for x in own_ticket_ids if x]
-
-matches = [x for x in valid_shared_ids if x in valid_own_ids]
-
-shared_coins = [str((x.get("orderDetails") or {}).get("soloMiningCoin") or "") for x in shared_rows]
-own_coins = [str(x.get("soloMiningCoin") or "") for x in own_rows]
-
-shared_starts = [str((x.get("orderDetails") or {}).get("startTs") or "") for x in shared_rows]
-own_starts = [str(x.get("startTs") or "") for x in own_rows]
-
-start_matches = [x for x in shared_starts if x and x in own_starts]
-
-print("SHARED HTTP", shared_r.status_code)
-print("OWN HTTP", own_r.status_code)
-print("SHARED completed rows", len(shared_rows))
-print("OWN completed rows", len(own_rows))
-print("SHARED rows with soloTicketId", len(valid_shared_ids))
-print("OWN rows with soloTicketId", len(valid_own_ids))
-print("EXACT soloTicketId matches", len(matches))
-print("START timestamp matches", len(start_matches))
-print("SHARED coins", sorted(set(shared_coins)))
-print("OWN coins", sorted(set(own_coins)))
+print("HTTP", r.status_code)
+print("ROWS", len(rows))
+print("STATUSES", sorted(set(statuses)))
+print("ROWS WITH ID", sum(bool(x) for x in ids))
+print("UNIQUE IDS", len(set(x for x in ids if x)))
+print("ROWS WITH createdTs", sum(bool(x) for x in created))
+print("ROWS WITH duration", sum(x is not None for x in durations))
+print("ROWS WITH participants", sum(x is not None for x in participants))
+print("ROWS WITH probability", sum(x is not None for x in probabilities))
+print("ROWS WITH mergeProbability", sum(x is not None for x in merge_probabilities))
+print("ROWS WITH isPublic", sum(x is not None for x in public_flags))
+print("ID fingerprints", [hashlib.sha256(x.encode()).hexdigest()[:10] for x in ids if x])
+print("STATUS sequence", statuses)
