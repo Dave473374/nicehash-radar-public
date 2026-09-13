@@ -9,40 +9,54 @@ BASE = "https://api2.nicehash.com"
 KEY = os.environ["NICEHASH_API_KEY"]
 SECRET = os.environ["NICEHASH_API_SECRET"].encode()
 ORG = os.environ["NICEHASH_ORG_ID"]
-PATH = "/hashpower/api/v2/hashpower/solo/shared/order"
-QUERY = "status=COMPLETED&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
+
+SHARED_PATH = "/hashpower/api/v2/hashpower/solo/shared/order"
+SHARED_QUERY = "status=COMPLETED&page=0&limit=100&sortDir=ASC&sortField=createdTs&onlyGold=false"
 
 ts = str(int(time.time() * 1000))
 nonce = str(uuid.uuid4())
 reqid = str(uuid.uuid4())
-
-msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", PATH, QUERY]).encode()
+msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", SHARED_PATH, SHARED_QUERY]).encode()
 sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
-
 headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
+shared_r = requests.get(BASE + SHARED_PATH + "?" + SHARED_QUERY, headers=headers, timeout=30)
+shared_rows = shared_r.json().get("list", [])
 
-r = requests.get(BASE + PATH + "?" + QUERY, headers=headers, timeout=30)
-d = r.json()
-rows = d.get("list", [])
+OWN_PATH = "/hashpower/api/v2/hashpower/solo/order"
+OWN_QUERY = "active=false&page=0&limit=100"
 
-details = [row.get("orderDetails") or {} for row in rows]
-members = [m for row in rows for m in (row.get("members") or []) if isinstance(m, dict)]
+ts = str(int(time.time() * 1000))
+nonce = str(uuid.uuid4())
+reqid = str(uuid.uuid4())
+msg = "\x00".join([KEY, ts, nonce, "", ORG, "", "GET", OWN_PATH, OWN_QUERY]).encode()
+sig = hmac.new(SECRET, msg, hashlib.sha256).hexdigest()
+headers = {"X-Time": ts, "X-Nonce": nonce, "X-Auth": KEY + ":" + sig, "X-Organization-Id": ORG, "X-Request-Id": reqid}
+own_r = requests.get(BASE + OWN_PATH + "?" + OWN_QUERY, headers=headers, timeout=30)
+own_rows = own_r.json().get("list", [])
 
-detail_reward_flags = [bool(x.get("isReward")) for x in details]
-member_reward_amounts = [float(m.get("rewardAmount") or 0) for m in members]
-member_reward_records = [reward for m in members for reward in (m.get("rewards") or [])]
-member_claimed_flags = [bool(m.get("claimed")) for m in members]
+shared_ticket_ids = [str((x.get("orderDetails") or {}).get("soloTicketId") or "") for x in shared_rows]
+own_ticket_ids = [str(x.get("soloTicketId") or "") for x in own_rows]
 
-meta_keys = sorted(set(k for m in members for k in ((m.get("meta") or {}).keys() if isinstance(m.get("meta"), dict) else [])))
+valid_shared_ids = [x for x in shared_ticket_ids if x]
+valid_own_ids = [x for x in own_ticket_ids if x]
 
-print("HTTP", r.status_code)
-print("COMPLETED packages", len(rows))
-print("orderDetails isReward TRUE", sum(detail_reward_flags))
-print("orderDetails isReward FALSE", len(detail_reward_flags) - sum(detail_reward_flags))
-print("members", len(members))
-print("members rewardAmount > 0", sum(x > 0 for x in member_reward_amounts))
-print("reward records", len(member_reward_records))
-print("members claimed TRUE", sum(member_claimed_flags))
-print("members claimed FALSE", len(member_claimed_flags) - sum(member_claimed_flags))
-print("member meta keys", meta_keys)
-print("package isReward flags", detail_reward_flags)
+matches = [x for x in valid_shared_ids if x in valid_own_ids]
+
+shared_coins = [str((x.get("orderDetails") or {}).get("soloMiningCoin") or "") for x in shared_rows]
+own_coins = [str(x.get("soloMiningCoin") or "") for x in own_rows]
+
+shared_starts = [str((x.get("orderDetails") or {}).get("startTs") or "") for x in shared_rows]
+own_starts = [str(x.get("startTs") or "") for x in own_rows]
+
+start_matches = [x for x in shared_starts if x and x in own_starts]
+
+print("SHARED HTTP", shared_r.status_code)
+print("OWN HTTP", own_r.status_code)
+print("SHARED completed rows", len(shared_rows))
+print("OWN completed rows", len(own_rows))
+print("SHARED rows with soloTicketId", len(valid_shared_ids))
+print("OWN rows with soloTicketId", len(valid_own_ids))
+print("EXACT soloTicketId matches", len(matches))
+print("START timestamp matches", len(start_matches))
+print("SHARED coins", sorted(set(shared_coins)))
+print("OWN coins", sorted(set(own_coins)))
