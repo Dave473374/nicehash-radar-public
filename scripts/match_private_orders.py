@@ -93,4 +93,21 @@ print("Completed orders:", len(orders))
 print("Radar snapshots:", len(snapshots))
 print("Valid matched orders:", len(matches))
 print("Matched rewards:", sum(1 for x in matches if x.get("hadReward")))
+print("MATCHED ORDER SUMMARY")
+
+summary = [
+    {
+        "package": x.get("packageName"),
+        "coin": x.get("coin"),
+        "finalSignal": x.get("finalSignal"),
+        "economicSignal": x.get("economicSignal"),
+        "expectedReturnPercent": x.get("expectedReturnPercent"),
+        "snapshotAgeMinutes": x.get("snapshotAgeMinutes"),
+        "closeToRewardPct": x.get("closeToRewardPct"),
+        "outcome": "HIT" if x.get("hadReward") else "MISS"
+    }
+    for x in matches
+]
+
+print(json.dumps(summary, indent=2, ensure_ascii=False))
 print("Private Radar calibration matcher completed successfully")
