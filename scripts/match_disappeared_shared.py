@@ -1,36 +1,42 @@
 import json
-import hashlib
 from pathlib import Path
 
-shared = [json.loads(x) for x in Path("calibration/shared-package-history.jsonl").read_text().splitlines() if x.strip()]
-blocks = [json.loads(x) for x in Path("calibration/realized-blocks.jsonl").read_text().splitlines() if x.strip()]
+shared = [
+    json.loads(x)
+    for x in Path("calibration/shared-package-history.jsonl").read_text().splitlines()
+    if x.strip()
+]
 
-shared_ids = sorted(set(str(x.get("package_id")) for x in shared if x.get("package_id")))
-block_ids = set(str(x.get("packageId")) for x in blocks if x.get("packageId"))
+tickets = [
+    x.get("currencyAlgoTicket")
+    for x in shared
+    if isinstance(x.get("currencyAlgoTicket"), dict)
+]
 
-matched_ids = sorted(set(shared_ids) & block_ids)
+print("TICKETS FOUND", len(tickets))
 
-def fp(x):
-    return hashlib.sha256(x.encode()).hexdigest()[:10]
+top_keys = sorted(set(k for t in tickets for k in t.keys()))
+print("TOP LEVEL TICKET KEYS")
+print(top_keys)
 
-print("SHARED HISTORY ROWS", len(shared))
-print("UNIQUE TRACKED PACKAGES", len(shared_ids))
-print("REALIZED BLOCK ROWS", len(blocks))
-print("EXACT PACKAGE ID MATCHES", len(matched_ids))
+id_like = sorted(set(
+    k
+    for t in tickets
+    for k in t.keys()
+    if "id" in k.lower() or "ticket" in k.lower() or "package" in k.lower()
+))
 
-print("MATCHED PACKAGE FINGERPRINTS")
-print([fp(x) for x in matched_ids])
+print("TOP LEVEL ID-LIKE KEYS")
+print(id_like)
 
-matched_blocks = [x for x in blocks if str(x.get("packageId")) in matched_ids]
+nested = []
 
-print("MATCHED BLOCK SUMMARY")
-print([
-    {
-        "package_fp": fp(str(x.get("packageId"))),
-        "coin": x.get("coin"),
-        "packageName": x.get("packageName"),
-        "shared": x.get("shared"),
-        "createdTs": x.get("createdTs")
-    }
-    for x in matched_blocks
-])
+for t in tickets:
+    for k, v in t.items():
+        if isinstance(v, dict):
+            for nk in v.keys():
+                if "id" in nk.lower() or "ticket" in nk.lower() or "package" in nk.lower():
+                    nested.append(f"{k}.{nk}")
+
+print("NESTED ID-LIKE KEYS")
+print(sorted(set(nested)))
