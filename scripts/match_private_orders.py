@@ -32,6 +32,7 @@ make_match = lambda order: next(
             "packageName": order.get("packageName"),
             "coin": order.get("soloMiningCoin"),
             "packagePriceBtc": order.get("packagePrice"),
+            "payedAmountBtc": order.get("payedAmount"),
             "closeToRewardPct": order.get("soloMiningSharesMaxPercent"),
             "hadReward": bool(order.get("isReward")),
             "snapshotCollectedAt": snap.get("collected_at"),
@@ -77,23 +78,37 @@ matches = [
     if (match := make_match(order)) is not None
 ]
 
-result = {
-    "completedOrders": len(orders),
-    "radarSnapshots": len(snapshots),
-    "validMatchedOrders": len(matches),
-    "matches": matches
-}
+signals = ["STRONG BUY", "BUY NOW", "GOOD", "WAIT", "NO BUY"]
 
-OUTPUT.write_text(
-    json.dumps(result, separators=(",", ":"), ensure_ascii=False),
-    encoding="utf-8"
-)
-
-print("Completed orders:", len(orders))
-print("Radar snapshots:", len(snapshots))
-print("Valid matched orders:", len(matches))
-print("Matched rewards:", sum(1 for x in matches if x.get("hadReward")))
-print("MATCHED ORDER SUMMARY")
+signal_stats = [
+    {
+        "signal": signal,
+        "orders": len(rows),
+        "hits": sum(1 for x in rows if x.get("hadReward")),
+        "misses": sum(1 for x in rows if not x.get("hadReward")),
+        "hitRatePercent": round(
+            100 * sum(1 for x in rows if x.get("hadReward")) / len(rows), 2
+        ) if rows else None,
+        "averageExpectedReturnPercent": round(
+            sum(
+                x.get("expectedReturnPercent")
+                for x in rows
+                if isinstance(x.get("expectedReturnPercent"), (int, float))
+            )
+            /
+            len([
+                x for x in rows
+                if isinstance(x.get("expectedReturnPercent"), (int, float))
+            ]),
+            2
+        ) if any(
+            isinstance(x.get("expectedReturnPercent"), (int, float))
+            for x in rows
+        ) else None
+    }
+    for signal in signals
+    if (rows := [x for x in matches if x.get("finalSignal") == signal])
+]
 
 summary = [
     {
@@ -109,5 +124,29 @@ summary = [
     for x in matches
 ]
 
+result = {
+    "completedOrders": len(orders),
+    "radarSnapshots": len(snapshots),
+    "validMatchedOrders": len(matches),
+    "matchedRewards": sum(1 for x in matches if x.get("hadReward")),
+    "signalStats": signal_stats,
+    "matches": matches
+}
+
+OUTPUT.write_text(
+    json.dumps(result, separators=(",", ":"), ensure_ascii=False),
+    encoding="utf-8"
+)
+
+print("Completed orders:", len(orders))
+print("Radar snapshots:", len(snapshots))
+print("Valid matched orders:", len(matches))
+print("Matched rewards:", sum(1 for x in matches if x.get("hadReward")))
+
+print("MATCHED ORDER SUMMARY")
 print(json.dumps(summary, indent=2, ensure_ascii=False))
+
+print("SIGNAL CALIBRATION SUMMARY")
+print(json.dumps(signal_stats, indent=2, ensure_ascii=False))
+
 print("Private Radar calibration matcher completed successfully")
