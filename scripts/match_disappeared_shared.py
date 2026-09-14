@@ -33,188 +33,222 @@ blocks = [
 ]
 
 
-disappeared = [
+disappeared_rows = [
     row
     for row in history
     if row.get("status") == "DISAPPEARED"
+    and row.get("package_id")
 ]
 
-print("DISAPPEARED RECORDS", len(disappeared))
+
+# One final DISAPPEARED record per concrete shared package instance
+latest_disappeared_by_id = {}
+
+for row in disappeared_rows:
+    package_id = row.get("package_id")
+    ts = parse_ts(row.get("collected_at"))
+
+    existing = latest_disappeared_by_id.get(package_id)
+
+    if (
+        existing is None
+        or (
+            ts is not None
+            and (
+                parse_ts(existing.get("collected_at")) is None
+                or ts > parse_ts(existing.get("collected_at"))
+            )
+        )
+    ):
+        latest_disappeared_by_id[package_id] = row
 
 
-if not disappeared:
-    print("NO DISAPPEARED RECORD FOUND")
-    raise SystemExit(0)
+results = []
 
 
-target = disappeared[-1]
+for package_id, target in latest_disappeared_by_id.items():
 
-package_id = target.get("package_id")
+    lifecycle = [
+        row
+        for row in history
+        if row.get("package_id") == package_id
+    ]
 
-ticket = target.get("currencyAlgoTicket") or {}
-primary = ticket.get("currencyAlgo") or {}
-merge = ticket.get("mergeCurrencyAlgo") or {}
-
-package_name = ticket.get("name")
-primary_coin = primary.get("currency")
-merge_coin = merge.get("currency")
-
-created = parse_ts(target.get("createdTs"))
-disappeared_at = parse_ts(target.get("collected_at"))
-
-
-lifecycle = [
-    row
-    for row in history
-    if row.get("package_id") == package_id
-]
-
-lifecycle = sorted(
-    lifecycle,
-    key=lambda row: (
-        parse_ts(row.get("collected_at"))
-        or datetime.min.replace(tzinfo=created.tzinfo)
+    lifecycle.sort(
+        key=lambda row: (
+            parse_ts(row.get("collected_at"))
+            or datetime.min.replace(tzinfo=datetime.now().astimezone().tzinfo)
+        )
     )
-)
 
+    pre_disappear = [
+        row
+        for row in lifecycle
+        if row.get("status") != "DISAPPEARED"
+    ]
 
-print("")
-print("TARGET PACKAGE")
-print(json.dumps(
-    {
-        "package_name": package_name,
-        "primary_coin": primary_coin,
-        "merge_coin": merge_coin,
+    observed_statuses = sorted({
+        str(row.get("status"))
+        for row in pre_disappear
+        if row.get("status")
+    })
+
+    waiting_only = (
+        bool(pre_disappear)
+        and set(observed_statuses) == {"WAITING"}
+    )
+
+    non_waiting_statuses = [
+        status
+        for status in observed_statuses
+        if status != "WAITING"
+    ]
+
+    if waiting_only:
+        lifecycle_class = "WAITING_ONLY"
+        calibration_eligibility = "EXCLUDE_NO_OBSERVED_MINING"
+    elif non_waiting_statuses:
+        lifecycle_class = "NON_WAITING_STATUS_OBSERVED"
+        calibration_eligibility = "REVIEW_REQUIRED"
+    else:
+        lifecycle_class = "INSUFFICIENT_LIFECYCLE_DATA"
+        calibration_eligibility = "EXCLUDE_INSUFFICIENT_DATA"
+
+    ticket = target.get("currencyAlgoTicket") or {}
+    primary = ticket.get("currencyAlgo") or {}
+    merge = ticket.get("mergeCurrencyAlgo") or {}
+
+    package_name = ticket.get("name")
+    primary_coin = primary.get("currency")
+    merge_coin = merge.get("currency")
+
+    created = parse_ts(target.get("createdTs"))
+    disappeared_at = parse_ts(target.get("collected_at"))
+
+    exact_candidates = []
+    buffered_candidates = []
+
+    if created and disappeared_at:
+
+        buffer_start = created - timedelta(
+            minutes=BUFFER_MINUTES
+        )
+
+        buffer_end = disappeared_at + timedelta(
+            minutes=BUFFER_MINUTES
+        )
+
+        for block in blocks:
+
+            block_ts = (
+                parse_ts(block.get("createdTs"))
+                or parse_ts(block.get("time"))
+                or parse_ts(block.get("collected_at"))
+            )
+
+            if not block_ts:
+                continue
+
+            if block.get("shared") is not True:
+                continue
+
+            if block.get("packageName") != package_name:
+                continue
+
+            if block.get("coin") != primary_coin:
+                continue
+
+            safe_block = {
+                "coin": block.get("coin"),
+                "packageName": block.get("packageName"),
+                "createdTs": block.get("createdTs"),
+                "time": block.get("time"),
+                "payoutRewardBtc": block.get("payoutRewardBtc")
+            }
+
+            if created <= block_ts <= disappeared_at:
+                exact_candidates.append(safe_block)
+
+            elif buffer_start <= block_ts <= buffer_end:
+                buffered_candidates.append(safe_block)
+
+    results.append({
+        "packageName": package_name,
+        "primaryCoin": primary_coin,
+        "mergeCoin": merge_coin,
+
         "createdTs": target.get("createdTs"),
         "disappearedAt": target.get("collected_at"),
+
         "durationSeconds": target.get("duration"),
-        "participants": target.get("numberOfParticipants"),
-        "probability": target.get("probability"),
-        "mergeProbability": target.get("mergeProbability"),
-        "lifecycleRecords": len(lifecycle)
-    },
-    indent=2,
-    ensure_ascii=False
-))
+
+        "lifecycleRecords": len(lifecycle),
+
+        "observedStatuses": observed_statuses,
+
+        "lifecycleClass": lifecycle_class,
+
+        "calibrationEligibility": calibration_eligibility,
+
+        "candidateBlocksExactWindow": len(exact_candidates),
+
+        "candidateBlocksBufferedWindow": len(
+            buffered_candidates
+        ),
+
+        "exactWindowBlocks": exact_candidates,
+
+        "bufferedWindowBlocks": buffered_candidates
+    })
 
 
-print("")
-print("PACKAGE LIFECYCLE")
+print("DISAPPEARED PACKAGE INSTANCES", len(results))
 
-safe_lifecycle = [
-    {
-        "collected_at": row.get("collected_at"),
-        "status": row.get("status"),
-        "participants": row.get("numberOfParticipants"),
-        "probability": row.get("probability"),
-        "mergeProbability": row.get("mergeProbability")
-    }
-    for row in lifecycle
-]
-
-print(json.dumps(
-    safe_lifecycle,
-    indent=2,
-    ensure_ascii=False
-))
-
-
-if not created or not disappeared_at:
-    print("")
-    print("INVALID TARGET TIME RANGE")
-    raise SystemExit(0)
-
-
-buffer_start = created - timedelta(minutes=BUFFER_MINUTES)
-buffer_end = disappeared_at + timedelta(minutes=BUFFER_MINUTES)
-
-
-def block_time(block):
-    return (
-        parse_ts(block.get("createdTs"))
-        or parse_ts(block.get("time"))
-        or parse_ts(block.get("collected_at"))
+print(
+    "WAITING ONLY",
+    sum(
+        1
+        for x in results
+        if x["lifecycleClass"] == "WAITING_ONLY"
     )
+)
 
-
-def same_package_type(block):
-    return (
-        block.get("coin") == primary_coin
-        and block.get("packageName") == package_name
-        and block.get("shared") is True
+print(
+    "REVIEW REQUIRED",
+    sum(
+        1
+        for x in results
+        if x["calibrationEligibility"] == "REVIEW_REQUIRED"
     )
+)
 
-
-exact_candidates = []
-
-buffer_candidates = []
-
-
-for block in blocks:
-
-    ts = block_time(block)
-
-    if not ts:
-        continue
-
-    if not same_package_type(block):
-        continue
-
-    safe_block = {
-        "coin": block.get("coin"),
-        "packageName": block.get("packageName"),
-        "shared": block.get("shared"),
-        "createdTs": block.get("createdTs"),
-        "time": block.get("time"),
-        "payoutRewardBtc": block.get("payoutRewardBtc")
-    }
-
-    if created <= ts <= disappeared_at:
-        exact_candidates.append(safe_block)
-
-    elif buffer_start <= ts <= buffer_end:
-        buffer_candidates.append(safe_block)
-
+print(
+    "INSUFFICIENT DATA",
+    sum(
+        1
+        for x in results
+        if x["calibrationEligibility"]
+        == "EXCLUDE_INSUFFICIENT_DATA"
+    )
+)
 
 print("")
-print("EXACT WINDOW")
-print(
-    created.isoformat(),
-    "->",
-    disappeared_at.isoformat()
-)
-
-print(
-    "TEAM/PACKAGE BTC BLOCKS IN EXACT WINDOW",
-    len(exact_candidates)
-)
+print("LIFECYCLE CLASSIFICATION")
 
 print(json.dumps(
-    exact_candidates,
+    results,
     indent=2,
     ensure_ascii=False
 ))
 
-
 print("")
-print("BUFFERED WINDOW")
+print("IMPORTANT")
 print(
-    buffer_start.isoformat(),
-    "->",
-    buffer_end.isoformat()
+    "No package is automatically labelled HIT or MISS."
 )
-
 print(
-    "ADDITIONAL BLOCKS IN +/- 15 MIN BUFFER",
-    len(buffer_candidates)
+    "WAITING-only packages are excluded from calibration."
 )
-
-print(json.dumps(
-    buffer_candidates,
-    indent=2,
-    ensure_ascii=False
-))
-
-
-print("")
-print("DIAGNOSTIC COMPLETE")
+print(
+    "Any observed non-WAITING lifecycle requires validation first."
+)
