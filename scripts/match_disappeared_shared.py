@@ -1,4 +1,5 @@
 import json
+import statistics
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -133,6 +134,31 @@ for package_id, target in latest_disappeared_by_id.items():
     created = parse_ts(target.get("createdTs"))
     disappeared_at = parse_ts(target.get("collected_at"))
 
+    # Find first observed COUNTDOWN
+    countdown_rows = [
+        row
+        for row in pre_disappear
+        if row.get("status") == "COUNTDOWN"
+        and parse_ts(row.get("collected_at"))
+    ]
+
+    first_countdown_at = None
+    countdown_to_disappear_minutes = None
+
+    if countdown_rows:
+        first_countdown_at = min(
+            parse_ts(row.get("collected_at"))
+            for row in countdown_rows
+        )
+
+        if disappeared_at:
+            countdown_to_disappear_minutes = round(
+                (
+                    disappeared_at - first_countdown_at
+                ).total_seconds() / 60.0,
+                2
+            )
+
     exact_candidates = []
     buffered_candidates = []
 
@@ -209,6 +235,15 @@ for package_id, target in latest_disappeared_by_id.items():
         "durationSeconds": target.get("duration"),
         "countdownDurationSeconds": target.get("countdownDuration"),
 
+        "firstObservedCountdownAt": (
+            first_countdown_at.isoformat()
+            if first_countdown_at
+            else None
+        ),
+
+        "countdownToDisappearMinutes":
+            countdown_to_disappear_minutes,
+
         "lifecycleRecords": len(lifecycle),
 
         "observedStatuses": observed_statuses,
@@ -260,6 +295,81 @@ print(
         == "EXCLUDE_INSUFFICIENT_DATA"
     )
 )
+
+
+# COUNTDOWN timing analysis
+countdown_results = [
+    x
+    for x in results
+    if x["countdownToDisappearMinutes"] is not None
+]
+
+countdown_minutes = [
+    x["countdownToDisappearMinutes"]
+    for x in countdown_results
+]
+
+print("")
+print("COUNTDOWN TIMING ANALYSIS")
+
+print(
+    "PACKAGES WITH OBSERVED COUNTDOWN",
+    len(countdown_results)
+)
+
+if countdown_minutes:
+
+    print(
+        "MIN MINUTES",
+        round(min(countdown_minutes), 2)
+    )
+
+    print(
+        "MEDIAN MINUTES",
+        round(statistics.median(countdown_minutes), 2)
+    )
+
+    print(
+        "MEAN MINUTES",
+        round(statistics.mean(countdown_minutes), 2)
+    )
+
+    print(
+        "MAX MINUTES",
+        round(max(countdown_minutes), 2)
+    )
+
+    print(
+        "BETWEEN 45 AND 65 MINUTES",
+        sum(
+            1
+            for value in countdown_minutes
+            if 45 <= value <= 65
+        )
+    )
+
+print("")
+print("COUNTDOWN PACKAGE SUMMARY")
+
+for x in countdown_results:
+    print(
+        json.dumps(
+            {
+                "packageName": x["packageName"],
+                "primaryCoin": x["primaryCoin"],
+                "countdownDurationSeconds":
+                    x["countdownDurationSeconds"],
+                "firstObservedCountdownAt":
+                    x["firstObservedCountdownAt"],
+                "disappearedAt":
+                    x["disappearedAt"],
+                "countdownToDisappearMinutes":
+                    x["countdownToDisappearMinutes"]
+            },
+            ensure_ascii=False
+        )
+    )
+
 
 print("")
 print("REVIEW REQUIRED LIFECYCLES")
