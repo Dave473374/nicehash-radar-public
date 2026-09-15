@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 HISTORY = Path("calibration/shared-package-history.jsonl")
 BLOCKS = Path("calibration/realized-blocks.jsonl")
@@ -18,6 +18,13 @@ def parse_ts(value):
         )
     except Exception:
         return None
+
+
+def safe_time(value):
+    ts = parse_ts(value)
+    if not ts:
+        return None
+    return ts.isoformat()
 
 
 history = [
@@ -77,7 +84,7 @@ for package_id, target in latest_disappeared_by_id.items():
     lifecycle.sort(
         key=lambda row: (
             parse_ts(row.get("collected_at"))
-            or datetime.min.replace(tzinfo=datetime.now().astimezone().tzinfo)
+            or datetime.min.replace(tzinfo=timezone.utc)
         )
     )
 
@@ -172,6 +179,20 @@ for package_id, target in latest_disappeared_by_id.items():
             elif buffer_start <= block_ts <= buffer_end:
                 buffered_candidates.append(safe_block)
 
+    lifecycle_timeline = []
+
+    for row in lifecycle:
+        lifecycle_timeline.append({
+            "observedAt": safe_time(row.get("collected_at")),
+            "status": row.get("status"),
+            "countdownDuration": row.get("countdownDuration"),
+            "duration": row.get("duration"),
+            "participants": row.get("numberOfParticipants"),
+            "probability": row.get("probability"),
+            "mergeProbability": row.get("mergeProbability"),
+            "projectedSpeed": row.get("projectedSpeed")
+        })
+
     results.append({
         "packageName": package_name,
         "primaryCoin": primary_coin,
@@ -181,6 +202,7 @@ for package_id, target in latest_disappeared_by_id.items():
         "disappearedAt": target.get("collected_at"),
 
         "durationSeconds": target.get("duration"),
+        "countdownDurationSeconds": target.get("countdownDuration"),
 
         "lifecycleRecords": len(lifecycle),
 
@@ -198,7 +220,9 @@ for package_id, target in latest_disappeared_by_id.items():
 
         "exactWindowBlocks": exact_candidates,
 
-        "bufferedWindowBlocks": buffered_candidates
+        "bufferedWindowBlocks": buffered_candidates,
+
+        "lifecycleTimeline": lifecycle_timeline
     })
 
 
@@ -233,10 +257,16 @@ print(
 )
 
 print("")
-print("LIFECYCLE CLASSIFICATION")
+print("REVIEW REQUIRED LIFECYCLES")
+
+review_required = [
+    x
+    for x in results
+    if x["calibrationEligibility"] == "REVIEW_REQUIRED"
+]
 
 print(json.dumps(
-    results,
+    review_required,
     indent=2,
     ensure_ascii=False
 ))
@@ -250,5 +280,5 @@ print(
     "WAITING-only packages are excluded from calibration."
 )
 print(
-    "Any observed non-WAITING lifecycle requires validation first."
+    "COUNTDOWN or any other non-WAITING status remains REVIEW_REQUIRED."
 )
