@@ -167,6 +167,7 @@ for package_id, target in latest_disappeared_by_id.items():
                 continue
 
             safe_block = {
+                "packageId": block.get("packageId"),
                 "coin": block.get("coin"),
                 "packageName": block.get("packageName"),
                 "createdTs": block.get("createdTs"),
