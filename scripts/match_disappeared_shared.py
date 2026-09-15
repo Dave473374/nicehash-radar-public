@@ -125,6 +125,7 @@ for package_id, target in latest_disappeared_by_id.items():
     primary = ticket.get("currencyAlgo") or {}
     merge = ticket.get("mergeCurrencyAlgo") or {}
 
+    ticket_id = ticket.get("id")
     package_name = ticket.get("name")
     primary_coin = primary.get("currency")
     merge_coin = merge.get("currency")
@@ -194,6 +195,9 @@ for package_id, target in latest_disappeared_by_id.items():
         })
 
     results.append({
+        "packageId": package_id,
+        "ticketId": ticket_id,
+
         "packageName": package_name,
         "primaryCoin": primary_coin,
         "mergeCoin": merge_coin,
