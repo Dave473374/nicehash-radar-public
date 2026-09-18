@@ -1,29 +1,109 @@
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
-SOURCE_FILE="buy-feed.json"
-OUTPUT_DIR="calibration"
-OUTPUT_FILE=os.path.join(OUTPUT_DIR,"radar-snapshots.jsonl")
+SOURCE_FILE = Path("buy-feed.json")
+OUTPUT_DIR = Path("calibration")
+OUTPUT_FILE = OUTPUT_DIR / "radar-snapshots.jsonl"
 
-feed=json.load(open(SOURCE_FILE,"r",encoding="utf-8"))
 
-assert feed.get("relay_version")=="2.8.2",f"Wrong relay_version: {feed.get('relay_version')}"
-assert feed.get("status")=="BUY FEED OK",f"Bad status: {feed.get('status')}"
-assert feed.get("ok") is True,"Feed ok is not true"
-assert feed.get("upstream_status")==200,f"Bad upstream_status: {feed.get('upstream_status')}"
-assert feed.get("market_status")=="MARKET OK",f"Bad market_status: {feed.get('market_status')}"
+def validate_feed(feed):
+    errors = []
 
-snapshot={
-"collected_at":datetime.now(timezone.utc).isoformat(),
-"feed_generated_at":feed.get("generated_at") or feed.get("timestamp") or feed.get("updated_at"),
-"relay_version":feed.get("relay_version"),
-"decision_engine":feed.get("decision_engine"),
-"feed":feed
+    if feed.get("status") != "BUY FEED OK":
+        errors.append(f"Bad status: {feed.get('status')}")
+    if feed.get("ok") is not True:
+        errors.append("Feed ok is not true")
+    if feed.get("upstream_status") != 200:
+        errors.append(f"Bad upstream_status: {feed.get('upstream_status')}")
+    if feed.get("market_status") != "MARKET OK":
+        errors.append(f"Bad market_status: {feed.get('market_status')}")
+    if not feed.get("relay_version"):
+        errors.append("relay_version missing")
+    if not isinstance(feed.get("packages"), list) or not feed.get("packages"):
+        errors.append("packages missing or empty")
+
+    if errors:
+        raise AssertionError("; ".join(errors))
+
+
+def canonical_feed_sha256(feed):
+    payload = json.dumps(
+        feed,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def existing_feed_hashes():
+    hashes = set()
+
+    if not OUTPUT_FILE.exists():
+        return hashes
+
+    for line in OUTPUT_FILE.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        saved_hash = row.get("feed_sha256")
+        if saved_hash:
+            hashes.add(str(saved_hash))
+            continue
+
+        historical_feed = row.get("feed")
+        if isinstance(historical_feed, dict):
+            hashes.add(canonical_feed_sha256(historical_feed))
+
+    return hashes
+
+
+feed = json.loads(SOURCE_FILE.read_text(encoding="utf-8"))
+validate_feed(feed)
+
+feed_hash = canonical_feed_sha256(feed)
+
+if feed_hash in existing_feed_hashes():
+    print("Calibration snapshot already present for current feed")
+    print("Relay version:", feed.get("relay_version"))
+    raise SystemExit(0)
+
+snapshot = {
+    "collected_at": datetime.now(timezone.utc).isoformat(),
+    "source": "LIVE_WORKFLOW",
+    "source_commit": os.getenv("GITHUB_SHA"),
+    "feed_sha256": feed_hash,
+    "feed_generated_at": (
+        feed.get("generated_at")
+        or feed.get("timestamp")
+        or feed.get("updated_at")
+        or feed.get("checked_at")
+    ),
+    "relay_version": feed.get("relay_version"),
+    "decision_engine": feed.get("decision_engine"),
+    "feed": feed,
 }
 
-os.makedirs(OUTPUT_DIR,exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-open(OUTPUT_FILE,"a",encoding="utf-8").write(json.dumps(snapshot,separators=(",",":"),ensure_ascii=False)+"\n")
+with OUTPUT_FILE.open("a", encoding="utf-8") as handle:
+    handle.write(
+        json.dumps(
+            snapshot,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
 
 print("Calibration snapshot created successfully")
+print("Relay version:", feed.get("relay_version"))
+print("Source commit:", snapshot["source_commit"] or "UNKNOWN")
