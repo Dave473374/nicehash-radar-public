@@ -9,6 +9,7 @@ from nicehash_private_readonly import (
 
 PAGE_SIZE = 100
 MAX_PAGES = int(os.getenv("PRIVATE_EASYMINING_MAX_PAGES", "10"))
+DIAGNOSTICS = os.getenv("PRIVATE_EASYMINING_DIAGNOSTICS", "0") == "1"
 OUTPUT = Path("/tmp/nicehash-completed-orders.json")
 
 
@@ -134,15 +135,17 @@ all_starts = sorted(
     if row.get("startTs")
 )
 
-print("PRIVATE EASYMINING READ-ONLY COLLECTOR")
-print("Allowed host:", policy_summary()["host"])
-print("Allowed method:", policy_summary()["method"])
-print("Allowed path:", policy_summary()["paths"][0])
-print("Pages fetched:", len(page_summaries))
-print("Rows by page:", [x["rows"] for x in page_summaries])
-print("Sanitized unique orders:", len(deduped))
-print("Oldest startTs:", all_starts[0] if all_starts else None)
-print("Newest startTs:", all_starts[-1] if all_starts else None)
+print("PRIVATE EASYMINING READ-ONLY COLLECTOR OK")
 print("Raw private response persisted: NO")
 print("Private response printed to logs: NO")
 print("Admin access allowed: NO")
+
+if DIAGNOSTICS:
+    print("Allowed host:", policy_summary()["host"])
+    print("Allowed method:", policy_summary()["method"])
+    print("Allowed paths:", policy_summary()["paths"])
+    print("Pages fetched:", len(page_summaries))
+    print("Rows by page:", [x["rows"] for x in page_summaries])
+    print("Sanitized unique orders:", len(deduped))
+    print("Oldest startTs:", all_starts[0] if all_starts else None)
+    print("Newest startTs:", all_starts[-1] if all_starts else None)
