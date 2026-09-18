@@ -276,41 +276,5 @@ OUTPUT.write_text(
     encoding="utf-8"
 )
 
-print("Completed orders:", len(orders))
-print("Radar snapshots:", len(snapshots))
-print("Valid matched orders:", len(matches))
-print(
-    "Matched rewards:",
-    sum(1 for x in matches if x.get("hadReward"))
-)
-
-print("MATCHED ORDER ROI SUMMARY")
-print(
-    json.dumps(
-        summary,
-        indent=2,
-        ensure_ascii=False
-    )
-)
-
-print("SIGNAL ROI CALIBRATION")
-print(
-    json.dumps(
-        signal_stats,
-        indent=2,
-        ensure_ascii=False
-    )
-)
-
-print("OVERALL MATCHED ROI")
-print(
-    json.dumps(
-        overall,
-        indent=2,
-        ensure_ascii=False
-    )
-)
-
-print(
-    "Private Radar ROI calibration matcher completed successfully"
-)
+print("PRIVATE RADAR ROI CALIBRATION OK")
+print("Details retained only in temporary /tmp output")
