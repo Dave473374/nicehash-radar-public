@@ -16,6 +16,13 @@ PUBLIC_MARKET_HISTORY = Path(
 
 ACTIONABLE_SIGNALS = {"GOOD", "BUY NOW", "STRONG BUY"}
 
+BATCH_CONFIRMATION_SNAPSHOTS = 2
+BATCH_MIN_EDGE_SCORE = 10.0
+BATCH_MIN_EXPECTED_RETURN_PERCENT = 95.0
+BATCH_MIN_Q24_PERCENT = 10.0
+BATCH_MIN_Q7_PERCENT = 5.0
+BATCH_SIGNALS = {"BUY NOW", "STRONG BUY"}
+
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
@@ -164,6 +171,87 @@ def purchase_priority(package):
     return "SECONDARY"
 
 
+def feed_freshness(feed, now):
+    feed_checked_at = parse_time(feed.get("checked_at"))
+    feed_age_minutes = None
+
+    if feed_checked_at is not None:
+        feed_age_minutes = round(
+            max(0.0, (now - feed_checked_at).total_seconds() / 60),
+            1,
+        )
+
+    if feed_age_minutes is None:
+        status = "UNKNOWN"
+    elif feed_age_minutes <= 7:
+        status = "FRESH"
+    elif feed_age_minutes <= 15:
+        status = "DELAYED"
+    else:
+        status = "STALE"
+
+    return {
+        "status": status,
+        "feedCheckedAt": feed.get("checked_at"),
+        "ageMinutes": feed_age_minutes,
+    }
+
+
+def batch_assessment(package, now, feed):
+    profitability = package.get("profitability") or {}
+    history = package.get("history_trend") or {}
+    edge = package.get("edge_shadow") or {}
+
+    signal = str(package.get("final_signal") or "UNKNOWN")
+    priority = purchase_priority(package)
+    expected_return = profitability.get("expected_return_percent")
+    q24 = history.get("expected_blocks_per_btc_vs_24h_percent")
+    q7 = history.get("expected_blocks_per_btc_vs_7d_percent")
+    edge_score = edge.get("edge_score")
+    market = public_market_context(package, now)
+    freshness = feed_freshness(feed, now)
+
+    checks = {
+        "primaryPackage": priority == "PRIMARY",
+        "strongCurrentSignal": signal in BATCH_SIGNALS,
+        "highEdge": (
+            isinstance(edge_score, (int, float))
+            and float(edge_score) >= BATCH_MIN_EDGE_SCORE
+        ),
+        "expectedReturn": (
+            isinstance(expected_return, (int, float))
+            and float(expected_return) >= BATCH_MIN_EXPECTED_RETURN_PERCENT
+        ),
+        "q24": (
+            isinstance(q24, (int, float))
+            and float(q24) >= BATCH_MIN_Q24_PERCENT
+        ),
+        "q7": (
+            isinstance(q7, (int, float))
+            and float(q7) >= BATCH_MIN_Q7_PERCENT
+        ),
+        "marketReady": market.get("status") == "READY",
+        "freshData": freshness.get("status") == "FRESH",
+    }
+
+    return {
+        "candidate": all(checks.values()),
+        "checks": checks,
+        "confirmationSnapshotsRequired": BATCH_CONFIRMATION_SNAPSHOTS,
+        "thresholds": {
+            "signals": sorted(BATCH_SIGNALS),
+            "minEdgeScore": BATCH_MIN_EDGE_SCORE,
+            "minExpectedReturnPercent": BATCH_MIN_EXPECTED_RETURN_PERCENT,
+            "minQ24Percent": BATCH_MIN_Q24_PERCENT,
+            "minQ7Percent": BATCH_MIN_Q7_PERCENT,
+        },
+        "policy": (
+            "Shadow/manual-only. BATCH OPPORTUNITY never buys or cancels tickets "
+            "and never changes CURRENT final_signal."
+        ),
+    }
+
+
 def package_alert_payload(package, previous_signal, now, feed):
     profitability = package.get("profitability") or {}
     history = package.get("history_trend") or {}
@@ -172,22 +260,7 @@ def package_alert_payload(package, previous_signal, now, feed):
     edge = package.get("edge_shadow") or {}
     market = public_market_context(package, now)
 
-    feed_checked_at = parse_time(feed.get("checked_at"))
-    feed_age_minutes = None
-    if feed_checked_at is not None:
-        feed_age_minutes = round(
-            max(0.0, (now - feed_checked_at).total_seconds() / 60),
-            1,
-        )
-
-    if feed_age_minutes is None:
-        freshness_status = "UNKNOWN"
-    elif feed_age_minutes <= 7:
-        freshness_status = "FRESH"
-    elif feed_age_minutes <= 15:
-        freshness_status = "DELAYED"
-    else:
-        freshness_status = "STALE"
+    freshness = feed_freshness(feed, now)
 
     signal = str(package.get("final_signal") or "UNKNOWN")
     reason = (
@@ -233,11 +306,7 @@ def package_alert_payload(package, previous_signal, now, feed):
             "productionOverride": edge.get("production_override") is True,
         },
         "publicMarket": market,
-        "freshness": {
-            "status": freshness_status,
-            "feedCheckedAt": feed.get("checked_at"),
-            "ageMinutes": feed_age_minutes,
-        },
+        "freshness": freshness,
         "relayVersion": feed.get("relay_version"),
         "decisionEngine": feed.get("decision_engine"),
         "sourceSignalField": "final_signal",
@@ -287,10 +356,43 @@ for package in packages:
     if changed and actionable:
         event = package_alert_payload(package, previous_signal, now_dt, feed)
         event["createdAt"] = now
+        event["eventType"] = "SIGNAL"
+        event["batchOpportunity"] = batch_assessment(
+            package,
+            now_dt,
+            feed,
+        )
         events.append(event)
         package_state["lastAlertedSignal"] = current_signal
         package_state["lastAlertedAt"] = now
 
+    batch = batch_assessment(package, now_dt, feed)
+    previous_streak = int(package_state.get("batchCandidateStreak") or 0)
+
+    if batch["candidate"]:
+        current_streak = previous_streak + 1
+    else:
+        current_streak = 0
+        package_state["batchActive"] = False
+
+    batch["confirmationStreak"] = current_streak
+    batch_confirmed = (
+        batch["candidate"]
+        and current_streak >= BATCH_CONFIRMATION_SNAPSHOTS
+    )
+
+    if batch_confirmed and package_state.get("batchActive") is not True:
+        event = package_alert_payload(package, previous_signal, now_dt, feed)
+        event["createdAt"] = now
+        event["eventType"] = "BATCH_OPPORTUNITY"
+        event["reason"] = "BATCH_OPPORTUNITY_CONFIRMED"
+        event["batchOpportunity"] = batch
+        events.append(event)
+
+        package_state["batchActive"] = True
+        package_state["lastBatchAlertedAt"] = now
+
+    package_state["batchCandidateStreak"] = current_streak
     package_state["lastObservedSignal"] = current_signal
     package_state["lastObservedRelayVersion"] = feed.get("relay_version")
     state["packages"][name] = package_state
@@ -322,6 +424,19 @@ OUT_FILE.write_text(
                     "SECONDARY = M packages and larger USDT packages such as size 50. "
                     "Priority affects alert display/order only."
                 ),
+                "batchOpportunity": {
+                    "shadowOnly": True,
+                    "automaticPurchase": False,
+                    "automaticCancel": False,
+                    "confirmationSnapshots": BATCH_CONFIRMATION_SNAPSHOTS,
+                    "signals": sorted(BATCH_SIGNALS),
+                    "minEdgeScore": BATCH_MIN_EDGE_SCORE,
+                    "minExpectedReturnPercent": BATCH_MIN_EXPECTED_RETURN_PERCENT,
+                    "minQ24Percent": BATCH_MIN_Q24_PERCENT,
+                    "minQ7Percent": BATCH_MIN_Q7_PERCENT,
+                    "marketMustBeReady": True,
+                    "dataMustBeFresh": True,
+                },
             },
         },
         indent=2,

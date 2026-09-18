@@ -69,12 +69,17 @@ jobs:
 
           for event in data.get("events") or []:
               signal = event.get("signal")
+              event_type = event.get("eventType") or "SIGNAL"
               icon = signal_icon.get(signal, "🔔")
               priority = event.get("purchasePriority") or "SECONDARY"
               priority_icon = "⭐" if priority == "PRIMARY" else "🟡"
-              title = (
-                  f"{priority_icon}{icon} {event.get('package')} — {signal}"
-              )
+
+              if event_type == "BATCH_OPPORTUNITY":
+                  title = f"🎯 {event.get('package')} — BATCH OPPORTUNITY"
+              else:
+                  title = (
+                      f"{priority_icon}{icon} {event.get('package')} — {signal}"
+                  )
 
               edge = event.get("edgeShadow") or {}
               market = event.get("publicMarket") or {}
@@ -114,22 +119,45 @@ jobs:
               else:
                   cost_text = "cost n/a"
 
-              message = "\n".join([
-                  (
-                      f"{priority} · {cost_text} · "
-                      f"EV {plain(event.get('expectedReturnPercent'))}%"
-                  ),
-                  (
-                      f"Q24 {signed(event.get('qualityVs24hPercent'))} · "
-                      f"Q7 {signed(event.get('qualityVs7dPercent'))} · "
-                      f"EDGE {edge_text}"
-                  ),
-                  market_text,
-                  (
-                      f"Odds: {event.get('nicehashOdds') or 'n/a'} · "
-                      f"Data: {freshness_text}"
-                  ),
-              ])
+              batch = event.get("batchOpportunity") or {}
+
+              if event_type == "BATCH_OPPORTUNITY":
+                  streak = batch.get("confirmationStreak")
+                  message = "\n".join([
+                      (
+                          f"PRIMARY · {cost_text} each · "
+                          f"CURRENT {signal} · EV {plain(event.get('expectedReturnPercent'))}%"
+                      ),
+                      (
+                          f"Q24 {signed(event.get('qualityVs24hPercent'))} · "
+                          f"Q7 {signed(event.get('qualityVs7dPercent'))} · "
+                          f"EDGE {edge_text}"
+                      ),
+                      (
+                          f"{market_text} · confirmed {streak} snapshots"
+                      ),
+                      (
+                          f"Odds: {event.get('nicehashOdds') or 'n/a'} · "
+                          f"Data: {freshness_text} · MANUAL ONLY"
+                      ),
+                  ])
+              else:
+                  message = "\n".join([
+                      (
+                          f"{priority} · {cost_text} · "
+                          f"EV {plain(event.get('expectedReturnPercent'))}%"
+                      ),
+                      (
+                          f"Q24 {signed(event.get('qualityVs24hPercent'))} · "
+                          f"Q7 {signed(event.get('qualityVs7dPercent'))} · "
+                          f"EDGE {edge_text}"
+                      ),
+                      market_text,
+                      (
+                          f"Odds: {event.get('nicehashOdds') or 'n/a'} · "
+                          f"Data: {freshness_text}"
+                      ),
+                  ])
 
               print(
                   f"::notice title={gh_escape(title)}::{gh_escape(message)}"
