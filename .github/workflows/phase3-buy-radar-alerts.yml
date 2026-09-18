@@ -1,0 +1,91 @@
+name: Phase 3 BUY Radar Alerts
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "5,20,35,50 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase3-buy-radar-alerts
+  cancel-in-progress: false
+
+jobs:
+  alerts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build alert events
+        run: python3 scripts/build_alert_events.py
+
+      - name: Emit actionable GitHub notices
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("/tmp/buy-radar-alerts.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+
+          for event in data.get("events") or []:
+              title = f"BUY Radar {event.get('signal')} - {event.get('package')}"
+              message = (
+                  f"coin={event.get('coin')} | "
+                  f"previous={event.get('previousSignal')} | "
+                  f"expected_return={event.get('expectedReturnPercent')}% | "
+                  f"quality_24h={event.get('qualityVs24hPercent')}% | "
+                  f"odds={event.get('nicehashOdds')}"
+              )
+              print(f"::notice title={title}::{message}")
+
+          print("Alert events:", data.get("eventCount", 0))
+          PY
+
+      - name: Persist alert state and history
+        run: |
+          git config user.name "NiceHash Radar Bot"
+          git config user.email "actions@github.com"
+
+          git add alerts/alert-state.json
+          if [ -f alerts/alert-history.jsonl ]; then
+            git add alerts/alert-history.jsonl
+          fi
+
+          if git diff --cached --quiet; then
+            echo "No alert state changes"
+            exit 0
+          fi
+
+          git commit -m "Update BUY Radar alert state"
+
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+
+            echo "Push race detected; rebasing on latest main (attempt $attempt/3)"
+            git fetch origin main
+
+            if ! git rebase origin/main; then
+              echo "Rebase conflict detected; refusing to overwrite remote changes"
+              git rebase --abort || true
+              exit 1
+            fi
+
+            sleep $((attempt * 2))
+          done
+
+          echo "Push failed after 3 safe retries"
+          exit 1
