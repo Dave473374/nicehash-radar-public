@@ -1,0 +1,107 @@
+name: Test BATCH Opportunity
+
+on:
+  push:
+    branches:
+      - batch-opportunity-shadow
+    paths:
+      - ".github/workflows/test-batch-opportunity.yml"
+      - "scripts/build_alert_events.py"
+      - ".github/workflows/phase3-buy-radar-alerts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build synthetic strong S setup in tmp only
+        run: |
+          python3 - <<'PY'
+          import json
+          from datetime import datetime, timezone, timedelta
+          from pathlib import Path
+
+          feed=json.loads(Path("buy-feed.json").read_text())
+          now=datetime.now(timezone.utc)
+          feed["checked_at"]=now.isoformat().replace("+00:00","Z")
+
+          for p in feed.get("packages") or []:
+              if p.get("name")=="Palladium S":
+                  p["final_signal"]="BUY NOW"
+                  p.setdefault("profitability",{})["expected_return_percent"]=98.5
+                  p.setdefault("history_trend",{})["expected_blocks_per_btc_vs_24h_percent"]=15.0
+                  p.setdefault("history_trend",{})["expected_blocks_per_btc_vs_7d_percent"]=10.0
+                  p.setdefault("edge_shadow",{})["edge_score"]=12.0
+                  p.setdefault("edge_shadow",{})["edge_label"]="HIGH"
+
+          Path("/tmp/test-buy-feed.json").write_text(json.dumps(feed))
+
+          rows=[]
+          start=now-timedelta(hours=10.5)
+          for i in range(48):
+              ts=start + (now-start)*i/47
+              rows.append({
+                  "collected_at":ts.isoformat(),
+                  "algorithms":{
+                      "SCRYPT":{
+                          "priceRaw":1.0,
+                          "orders":100,
+                          "speedRaw":1000.0,
+                          "rigs":100,
+                          "speedUnit":"TH",
+                      }
+                  }
+              })
+
+          Path("/tmp/test-market.jsonl").write_text(
+              "".join(json.dumps(x)+"\n" for x in rows)
+          )
+          PY
+
+          export BUY_RADAR_FEED=/tmp/test-buy-feed.json
+          export BUY_RADAR_ALERT_STATE=/tmp/test-alert-state.json
+          export BUY_RADAR_ALERT_HISTORY=/tmp/test-alert-history.jsonl
+          export BUY_RADAR_PUBLIC_MARKET_HISTORY=/tmp/test-market.jsonl
+
+          BUY_RADAR_ALERT_OUTPUT=/tmp/first.json           python3 scripts/build_alert_events.py
+
+          BUY_RADAR_ALERT_OUTPUT=/tmp/second.json           python3 scripts/build_alert_events.py
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          first=json.loads(Path("/tmp/first.json").read_text())
+          second=json.loads(Path("/tmp/second.json").read_text())
+
+          first_batch=[
+              e for e in first.get("events") or []
+              if e.get("eventType")=="BATCH_OPPORTUNITY"
+          ]
+          second_batch=[
+              e for e in second.get("events") or []
+              if e.get("eventType")=="BATCH_OPPORTUNITY"
+          ]
+
+          assert len(first_batch)==0, first_batch
+          assert len(second_batch)==1, second_batch
+
+          e=second_batch[0]
+          assert e.get("package")=="Palladium S"
+          assert e.get("purchasePriority")=="PRIMARY"
+          assert e.get("automaticPurchase") is False
+          assert (e.get("batchOpportunity") or {}).get("confirmationStreak")==2
+
+          print("BATCH OPPORTUNITY TEST OK")
+          print("package", e.get("package"))
+          print("signal", e.get("signal"))
+          print("streak", (e.get("batchOpportunity") or {}).get("confirmationStreak"))
+          print("automaticPurchase", e.get("automaticPurchase"))
+          PY
