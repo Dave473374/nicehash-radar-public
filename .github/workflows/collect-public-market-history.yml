@@ -2,12 +2,6 @@ name: Collect Public Market History
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - public-market-history
-    paths:
-      - "scripts/collect_public_market_history.py"
-      - ".github/workflows/collect-public-market-history.yml"
   schedule:
     - cron: "3,18,33,48 * * * *"
 
