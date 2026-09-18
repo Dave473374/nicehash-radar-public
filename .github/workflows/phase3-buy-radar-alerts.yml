@@ -39,13 +39,34 @@ jobs:
           path = Path("/tmp/buy-radar-alerts.json")
           data = json.loads(path.read_text(encoding="utf-8"))
 
-          def signed(value):
+          def signed(value, digits=1):
               if isinstance(value, (int, float)):
-                  return f"{value:+.2f}%"
+                  return f"{value:+.{digits}f}%"
               return "n/a"
 
+          def plain(value, digits=1):
+              if isinstance(value, (int, float)):
+                  return f"{value:.{digits}f}"
+              return "n/a"
+
+          def gh_escape(value):
+              return (
+                  str(value)
+                  .replace("%", "%25")
+                  .replace("\r", "%0D")
+                  .replace("\n", "%0A")
+              )
+
+          signal_icon = {
+              "GOOD": "🟢",
+              "BUY NOW": "🔥",
+              "STRONG BUY": "🚨",
+          }
+
           for event in data.get("events") or []:
-              title = f"BUY Radar {event.get('signal')} - {event.get('package')}"
+              signal = event.get("signal")
+              icon = signal_icon.get(signal, "🔔")
+              title = f"{icon} {event.get('package')} — {signal}"
 
               edge = event.get("edgeShadow") or {}
               market = event.get("publicMarket") or {}
@@ -53,7 +74,7 @@ jobs:
               edge_label = edge.get("label") or "UNKNOWN"
               edge_score = edge.get("score")
               edge_text = (
-                  f"{edge_label} ({edge_score:+.2f})"
+                  f"{edge_label} {edge_score:+.2f}"
                   if isinstance(edge_score, (int, float))
                   else edge_label
               )
@@ -61,33 +82,30 @@ jobs:
               market_status = market.get("status") or "UNAVAILABLE"
               if market_status == "READY":
                   market_text = (
-                      f"READY {market.get('algorithm')} "
-                      f"orders={market.get('orders')} "
-                      f"priceΔ24={signed(market.get('priceVs24hMedianPercent'))} "
-                      f"ordersΔ24={signed(market.get('ordersVs24hMedianPercent'))} "
-                      f"speedΔ24={signed(market.get('speedVs24hMedianPercent'))}"
+                      f"MARKET: READY · price {signed(market.get('priceVs24hMedianPercent'))} · "
+                      f"orders {signed(market.get('ordersVs24hMedianPercent'))}"
                   )
               elif market_status == "WARMING_UP":
                   market_text = (
-                      f"WARMING_UP {market.get('algorithm')} "
-                      f"orders={market.get('orders')} "
-                      f"samples={market.get('samples24h')} "
-                      f"coverage={market.get('coverageHours24h')}h"
+                      f"MARKET: WARMING UP · {market.get('orders')} orders"
                   )
               else:
-                  market_text = f"{market_status} {market.get('algorithm') or ''}".strip()
+                  market_text = f"MARKET: {market_status}"
 
-              message = (
-                  f"CURRENT={event.get('signal')} | "
-                  f"EDGE={edge_text} | "
-                  f"MARKET={market_text} | "
-                  f"EV={event.get('expectedReturnPercent')}% | "
-                  f"Q24={signed(event.get('qualityVs24hPercent'))} | "
-                  f"Q7={signed(event.get('qualityVs7dPercent'))} | "
-                  f"odds={event.get('nicehashOdds')} | "
-                  f"previous={event.get('previousSignal')}"
+              message = "\n".join([
+                  (
+                      f"EV {plain(event.get('expectedReturnPercent'))}% · "
+                      f"Q24 {signed(event.get('qualityVs24hPercent'))} · "
+                      f"Q7 {signed(event.get('qualityVs7dPercent'))}"
+                  ),
+                  f"EDGE: {edge_text}",
+                  market_text,
+                  f"Odds: {event.get('nicehashOdds') or 'n/a'}",
+              ])
+
+              print(
+                  f"::notice title={gh_escape(title)}::{gh_escape(message)}"
               )
-              print(f"::notice title={title}::{message}")
 
           print("Alert events:", data.get("eventCount", 0))
           PY
