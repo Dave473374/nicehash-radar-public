@@ -159,6 +159,23 @@ def package_alert_payload(package, previous_signal, now, feed):
     edge = package.get("edge_shadow") or {}
     market = public_market_context(package, now)
 
+    feed_checked_at = parse_time(feed.get("checked_at"))
+    feed_age_minutes = None
+    if feed_checked_at is not None:
+        feed_age_minutes = round(
+            max(0.0, (now - feed_checked_at).total_seconds() / 60),
+            1,
+        )
+
+    if feed_age_minutes is None:
+        freshness_status = "UNKNOWN"
+    elif feed_age_minutes <= 7:
+        freshness_status = "FRESH"
+    elif feed_age_minutes <= 15:
+        freshness_status = "DELAYED"
+    else:
+        freshness_status = "STALE"
+
     signal = str(package.get("final_signal") or "UNKNOWN")
     reason = (
         "ENTERED_ACTIONABLE_SET"
@@ -202,6 +219,11 @@ def package_alert_payload(package, previous_signal, now, feed):
             "productionOverride": edge.get("production_override") is True,
         },
         "publicMarket": market,
+        "freshness": {
+            "status": freshness_status,
+            "feedCheckedAt": feed.get("checked_at"),
+            "ageMinutes": feed_age_minutes,
+        },
         "relayVersion": feed.get("relay_version"),
         "decisionEngine": feed.get("decision_engine"),
         "sourceSignalField": "final_signal",
