@@ -1,0 +1,42 @@
+name: Test Faster BUY Alerts
+
+on:
+  push:
+    branches:
+      - faster-buy-alerts
+    paths:
+      - ".github/workflows/test-faster-buy-alerts.yml"
+      - "scripts/build_alert_events.py"
+      - ".github/workflows/phase3-buy-radar-alerts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build temporary alert payload
+        env:
+          BUY_RADAR_ALERT_STATE: /tmp/test-alert-state.json
+          BUY_RADAR_ALERT_HISTORY: /tmp/test-alert-history.jsonl
+          BUY_RADAR_ALERT_OUTPUT: /tmp/test-alert-output.json
+        run: |
+          python3 scripts/build_alert_events.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("/tmp/test-alert-output.json").read_text())
+          print("events", data.get("eventCount"))
+          for e in data.get("events") or []:
+              print(
+                  e.get("package"),
+                  e.get("signal"),
+                  (e.get("freshness") or {}).get("status"),
+                  (e.get("freshness") or {}).get("ageMinutes"),
+              )
+          PY
