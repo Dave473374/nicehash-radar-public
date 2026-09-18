@@ -2,8 +2,11 @@ name: Phase 3 BUY Radar Alerts
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "5,20,35,50 * * * *"
+  workflow_run:
+    workflows:
+      - "Update NiceHash BUY Feed"
+    types:
+      - completed
 
 permissions:
   contents: write
@@ -14,6 +17,7 @@ concurrency:
 
 jobs:
   alerts:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
 
     steps:
@@ -70,6 +74,7 @@ jobs:
 
               edge = event.get("edgeShadow") or {}
               market = event.get("publicMarket") or {}
+              freshness = event.get("freshness") or {}
 
               edge_label = edge.get("label") or "UNKNOWN"
               edge_score = edge.get("score")
@@ -92,6 +97,13 @@ jobs:
               else:
                   market_text = f"MARKET: {market_status}"
 
+              age = freshness.get("ageMinutes")
+              fresh_status = freshness.get("status") or "UNKNOWN"
+              if isinstance(age, (int, float)):
+                  freshness_text = f"{fresh_status} · {age:.1f}m old"
+              else:
+                  freshness_text = fresh_status
+
               message = "\n".join([
                   (
                       f"EV {plain(event.get('expectedReturnPercent'))}% · "
@@ -100,7 +112,10 @@ jobs:
                   ),
                   f"EDGE: {edge_text}",
                   market_text,
-                  f"Odds: {event.get('nicehashOdds') or 'n/a'}",
+                  (
+                      f"Odds: {event.get('nicehashOdds') or 'n/a'} · "
+                      f"Data: {freshness_text}"
+                  ),
               ])
 
               print(
