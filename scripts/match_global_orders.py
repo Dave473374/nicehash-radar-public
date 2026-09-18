@@ -485,6 +485,12 @@ def find_match(order):
                 "finalSignal": package.get(
                     "final_signal"
                 ),
+                "modelHitProbabilityPercent": (
+                    package.get("primary_chain") or {}
+                ).get("model_hit_probability_percent"),
+                "nicehashHitProbabilityPercent": (
+                    package.get("nicehash_odds") or {}
+                ).get("hit_probability_percent"),
                 "expectedReturnPercent": (
                     package.get("profitability") or {}
                 ).get("expected_return_percent"),
@@ -546,6 +552,10 @@ for signal in SIGNALS:
             "hitRatePercent": round(
                 hits / len(rows) * 100,
                 4,
+            ),
+            "averageModelHitProbabilityPercent": mean_numeric(
+                rows,
+                "modelHitProbabilityPercent",
             ),
             "averageExpectedReturnPercent": mean_numeric(
                 rows,
