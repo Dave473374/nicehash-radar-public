@@ -1,0 +1,59 @@
+name: Test Package Priority Alerts
+
+on:
+  push:
+    branches:
+      - package-priority-alerts
+    paths:
+      - ".github/workflows/test-package-priority-alerts.yml"
+      - "scripts/build_alert_events.py"
+      - ".github/workflows/phase3-buy-radar-alerts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build synthetic alert cases in tmp only
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          feed=json.loads(Path("buy-feed.json").read_text())
+          targets={"Palladium S","Palladium M","Silver 5"}
+          for p in feed.get("packages") or []:
+              if p.get("name") in targets:
+                  p["final_signal"]="GOOD"
+          Path("/tmp/test-buy-feed.json").write_text(json.dumps(feed))
+          PY
+
+          BUY_RADAR_FEED=/tmp/test-buy-feed.json           BUY_RADAR_ALERT_STATE=/tmp/test-alert-state.json           BUY_RADAR_ALERT_HISTORY=/tmp/test-alert-history.jsonl           BUY_RADAR_ALERT_OUTPUT=/tmp/test-alert-output.json           python3 scripts/build_alert_events.py
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("/tmp/test-alert-output.json").read_text())
+          rows=[
+              {
+                  "package":e.get("package"),
+                  "priority":e.get("purchasePriority"),
+                  "cost":e.get("packageCostEur"),
+              }
+              for e in data.get("events") or []
+              if e.get("package") in {"Palladium S","Palladium M","Silver 5"}
+          ]
+          print(rows)
+          by={x["package"]:x for x in rows}
+          assert by["Palladium S"]["priority"]=="PRIMARY"
+          assert by["Silver 5"]["priority"]=="PRIMARY"
+          assert by["Palladium M"]["priority"]=="SECONDARY"
+          assert rows[0]["priority"]=="PRIMARY"
+          print("PACKAGE PRIORITY ALERT TEST OK")
+          PY
