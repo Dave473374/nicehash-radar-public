@@ -1,12 +1,18 @@
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 BUY_FEED = Path(os.getenv("BUY_RADAR_FEED", "buy-feed.json"))
 STATE_FILE = Path(os.getenv("BUY_RADAR_ALERT_STATE", "alerts/alert-state.json"))
 HISTORY_FILE = Path(os.getenv("BUY_RADAR_ALERT_HISTORY", "alerts/alert-history.jsonl"))
 OUT_FILE = Path(os.getenv("BUY_RADAR_ALERT_OUTPUT", "/tmp/buy-radar-alerts.json"))
+PUBLIC_MARKET_HISTORY = Path(
+    os.getenv(
+        "BUY_RADAR_PUBLIC_MARKET_HISTORY",
+        "calibration/public-market-history.jsonl",
+    )
+)
 
 ACTIONABLE_SIGNALS = {"GOOD", "BUY NOW", "STRONG BUY"}
 
@@ -27,11 +33,131 @@ def compact_number(value, digits=4):
     return None
 
 
+def parse_time(value):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def median(values):
+    values = sorted(float(x) for x in values if isinstance(x, (int, float)))
+    if not values:
+        return None
+    middle = len(values) // 2
+    if len(values) % 2:
+        return values[middle]
+    return (values[middle - 1] + values[middle]) / 2
+
+
+def pct_vs(value, baseline):
+    if not isinstance(value, (int, float)):
+        return None
+    if not isinstance(baseline, (int, float)) or baseline == 0:
+        return None
+    return round((float(value) / float(baseline) - 1) * 100, 3)
+
+
+def load_public_market_history():
+    if not PUBLIC_MARKET_HISTORY.exists():
+        return []
+
+    rows = []
+    for line in PUBLIC_MARKET_HISTORY.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+PUBLIC_MARKET_ROWS = load_public_market_history()
+
+
+def public_market_context(package, now):
+    primary = package.get("primary_chain") or {}
+    algorithm = str(primary.get("algorithm") or "").upper()
+    if not algorithm:
+        return {
+            "status": "UNAVAILABLE",
+            "role": "INFORMATIONAL_ONLY",
+            "algorithm": None,
+        }
+
+    samples = []
+    for row in PUBLIC_MARKET_ROWS:
+        ts = parse_time(row.get("collected_at"))
+        algo = (row.get("algorithms") or {}).get(algorithm)
+        if ts is None or not isinstance(algo, dict):
+            continue
+        samples.append((ts, algo))
+
+    if not samples:
+        return {
+            "status": "UNAVAILABLE",
+            "role": "INFORMATIONAL_ONLY",
+            "algorithm": algorithm,
+        }
+
+    samples.sort(key=lambda item: item[0])
+    latest_ts, latest = samples[-1]
+    cutoff = now - timedelta(hours=24)
+    recent = [(ts, data) for ts, data in samples if ts >= cutoff]
+
+    price_values = [data.get("priceRaw") for _, data in recent]
+    order_values = [data.get("orders") for _, data in recent]
+    speed_values = [data.get("speedRaw") for _, data in recent]
+
+    coverage_hours = 0.0
+    if len(recent) >= 2:
+        coverage_hours = (
+            recent[-1][0] - recent[0][0]
+        ).total_seconds() / 3600
+
+    ready = len(recent) >= 48 and coverage_hours >= 10
+
+    return {
+        "status": "READY" if ready else "WARMING_UP",
+        "role": "INFORMATIONAL_ONLY",
+        "algorithm": algorithm,
+        "collectedAt": latest_ts.isoformat(),
+        "ageMinutes": round((now - latest_ts).total_seconds() / 60, 1),
+        "speedUnit": latest.get("speedUnit"),
+        "orders": latest.get("orders"),
+        "rigs": latest.get("rigs"),
+        "priceRaw": compact_number(latest.get("priceRaw"), 12),
+        "speedRaw": compact_number(latest.get("speedRaw"), 4),
+        "samples24h": len(recent),
+        "coverageHours24h": round(coverage_hours, 2),
+        "priceVs24hMedianPercent": (
+            pct_vs(latest.get("priceRaw"), median(price_values))
+            if ready
+            else None
+        ),
+        "ordersVs24hMedianPercent": (
+            pct_vs(latest.get("orders"), median(order_values))
+            if ready
+            else None
+        ),
+        "speedVs24hMedianPercent": (
+            pct_vs(latest.get("speedRaw"), median(speed_values))
+            if ready
+            else None
+        ),
+    }
+
+
 def package_alert_payload(package, previous_signal, now, feed):
     profitability = package.get("profitability") or {}
     history = package.get("history_trend") or {}
     primary = package.get("primary_chain") or {}
     nicehash_odds = package.get("nicehash_odds") or {}
+    edge = package.get("edge_shadow") or {}
+    market = public_market_context(package, now)
 
     signal = str(package.get("final_signal") or "UNKNOWN")
     reason = (
@@ -69,6 +195,13 @@ def package_alert_payload(package, previous_signal, now, feed):
         ),
         "nicehashOdds": nicehash_odds.get("display"),
         "breakEvenRisk": (profitability.get("break_even_risk") or {}).get("status"),
+        "edgeShadow": {
+            "status": edge.get("status"),
+            "label": edge.get("edge_label"),
+            "score": compact_number(edge.get("edge_score"), 4),
+            "productionOverride": edge.get("production_override") is True,
+        },
+        "publicMarket": market,
         "relayVersion": feed.get("relay_version"),
         "decisionEngine": feed.get("decision_engine"),
         "sourceSignalField": "final_signal",
@@ -96,7 +229,8 @@ state.setdefault("packages", {})
 if not isinstance(state["packages"], dict):
     raise SystemExit("Alert state packages map is invalid")
 
-now = utc_now()
+now_dt = datetime.now(timezone.utc)
+now = now_dt.isoformat()
 events = []
 
 for package in packages:
@@ -115,7 +249,8 @@ for package in packages:
     actionable = current_signal in ACTIONABLE_SIGNALS
 
     if changed and actionable:
-        event = package_alert_payload(package, previous_signal, now, feed)
+        event = package_alert_payload(package, previous_signal, now_dt, feed)
+        event["createdAt"] = now
         events.append(event)
         package_state["lastAlertedSignal"] = current_signal
         package_state["lastAlertedAt"] = now
@@ -143,6 +278,8 @@ OUT_FILE.write_text(
                 "waitAndNoBuyAlerts": False,
                 "automaticPurchase": False,
                 "timeSinceLastBlockCanRaiseSignal": False,
+                "edgeShadowCanRaiseSignal": False,
+                "publicMarketCanRaiseSignal": False,
             },
         },
         indent=2,
