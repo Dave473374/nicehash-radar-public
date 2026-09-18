@@ -152,18 +152,9 @@ def public_market_context(package, now):
 
 
 def purchase_priority(package):
-    size = str(package.get("size") or "").upper()
-    market = str(package.get("currency_market") or "").upper()
     cost = (package.get("economics") or {}).get("package_cost_eur")
 
-    if size == "S":
-        return "PRIMARY"
-
-    if (
-        market == "USDT"
-        and isinstance(cost, (int, float))
-        and float(cost) <= 20
-    ):
+    if isinstance(cost, (int, float)) and float(cost) <= 100:
         return "PRIMARY"
 
     return "SECONDARY"
@@ -323,8 +314,8 @@ OUT_FILE.write_text(
                 "publicMarketCanRaiseSignal": False,
                 "purchasePriorityCanRaiseSignal": False,
                 "purchasePriorityPolicy": (
-                    "PRIMARY = S packages or USDT packages costing <= EUR 20; "
-                    "SECONDARY = all other packages. Priority affects alert display/order only."
+                    "PRIMARY = any package costing <= EUR 100; "
+                    "SECONDARY = packages above EUR 100. Priority affects alert display/order only."
                 ),
             },
         },
