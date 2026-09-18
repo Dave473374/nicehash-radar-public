@@ -151,6 +151,24 @@ def public_market_context(package, now):
     }
 
 
+def purchase_priority(package):
+    size = str(package.get("size") or "").upper()
+    market = str(package.get("currency_market") or "").upper()
+    cost = (package.get("economics") or {}).get("package_cost_eur")
+
+    if size == "S":
+        return "PRIMARY"
+
+    if (
+        market == "USDT"
+        and isinstance(cost, (int, float))
+        and float(cost) <= 20
+    ):
+        return "PRIMARY"
+
+    return "SECONDARY"
+
+
 def package_alert_payload(package, previous_signal, now, feed):
     profitability = package.get("profitability") or {}
     history = package.get("history_trend") or {}
@@ -189,6 +207,7 @@ def package_alert_payload(package, previous_signal, now, feed):
         "package": package.get("name"),
         "size": package.get("size"),
         "signal": signal,
+        "purchasePriority": purchase_priority(package),
         "previousSignal": previous_signal,
         "coin": primary.get("currency"),
         "currencyMarket": package.get("currency_market"),
@@ -302,12 +321,28 @@ OUT_FILE.write_text(
                 "timeSinceLastBlockCanRaiseSignal": False,
                 "edgeShadowCanRaiseSignal": False,
                 "publicMarketCanRaiseSignal": False,
+                "purchasePriorityCanRaiseSignal": False,
+                "purchasePriorityPolicy": (
+                    "PRIMARY = S packages or USDT packages costing <= EUR 20; "
+                    "SECONDARY = all other packages. Priority affects alert display/order only."
+                ),
             },
         },
         indent=2,
         ensure_ascii=False,
     ) + "\n",
     encoding="utf-8",
+)
+
+events.sort(
+    key=lambda event: (
+        0 if event.get("purchasePriority") == "PRIMARY" else 1,
+        -(
+            event.get("edgeShadow", {}).get("score")
+            if isinstance(event.get("edgeShadow", {}).get("score"), (int, float))
+            else -999999
+        ),
+    )
 )
 
 if events:

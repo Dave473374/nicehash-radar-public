@@ -70,7 +70,11 @@ jobs:
           for event in data.get("events") or []:
               signal = event.get("signal")
               icon = signal_icon.get(signal, "🔔")
-              title = f"{icon} {event.get('package')} — {signal}"
+              priority = event.get("purchasePriority") or "SECONDARY"
+              priority_icon = "⭐" if priority == "PRIMARY" else "🟡"
+              title = (
+                  f"{priority_icon}{icon} {event.get('package')} — {signal}"
+              )
 
               edge = event.get("edgeShadow") or {}
               market = event.get("publicMarket") or {}
@@ -104,13 +108,22 @@ jobs:
               else:
                   freshness_text = fresh_status
 
+              cost = event.get("packageCostEur")
+              if isinstance(cost, (int, float)):
+                  cost_text = f"~€{cost:.1f}"
+              else:
+                  cost_text = "cost n/a"
+
               message = "\n".join([
                   (
-                      f"EV {plain(event.get('expectedReturnPercent'))}% · "
-                      f"Q24 {signed(event.get('qualityVs24hPercent'))} · "
-                      f"Q7 {signed(event.get('qualityVs7dPercent'))}"
+                      f"{priority} · {cost_text} · "
+                      f"EV {plain(event.get('expectedReturnPercent'))}%"
                   ),
-                  f"EDGE: {edge_text}",
+                  (
+                      f"Q24 {signed(event.get('qualityVs24hPercent'))} · "
+                      f"Q7 {signed(event.get('qualityVs7dPercent'))} · "
+                      f"EDGE {edge_text}"
+                  ),
                   market_text,
                   (
                       f"Odds: {event.get('nicehashOdds') or 'n/a'} · "
