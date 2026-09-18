@@ -1,0 +1,30 @@
+name: Test Alert Market Context
+
+on:
+  push:
+    branches:
+      - alert-market-context
+    paths:
+      - "scripts/build_alert_events.py"
+      - ".github/workflows/phase3-buy-radar-alerts.yml"
+      - ".github/workflows/test-alert-market-context.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build alert payload with temporary state
+        env:
+          BUY_RADAR_ALERT_STATE: /tmp/test-alert-state.json
+          BUY_RADAR_ALERT_HISTORY: /tmp/test-alert-history.jsonl
+          BUY_RADAR_ALERT_OUTPUT: /tmp/test-alert-output.json
+        run: |
+          python3 scripts/build_alert_events.py
+          cat /tmp/test-alert-output.json
