@@ -29,6 +29,9 @@ jobs:
       - name: Apply NEW calibrated shadow
         run: python3 scripts/apply_calibrated_shadow.py
 
+      - name: Apply EDGE shadow audit
+        run: python3 scripts/apply_edge_shadow.py
+
       - name: Validate final JSON
         run: |
           python -m json.tool buy-feed.json > /dev/null
@@ -38,11 +41,15 @@ jobs:
 
           feed = json.loads(Path("buy-feed.json").read_text(encoding="utf-8"))
           shadow = feed.get("calibrated_shadow") or {}
+          edge = feed.get("edge_shadow") or {}
           packages = feed.get("packages") or []
 
           assert shadow.get("model_use") == "NEW_CALIBRATED_SHADOW_ONLY"
           assert shadow.get("production_model") == "CURRENT"
           assert shadow.get("production_model_changed") is False
+          assert edge.get("model_use") == "EDGE_SHADOW_AUDIT_ONLY"
+          assert edge.get("production_model") == "CURRENT"
+          assert edge.get("production_model_changed") is False
           assert packages
 
           for package in packages:
@@ -50,6 +57,11 @@ jobs:
               package_shadow = package.get("calibrated_shadow") or {}
               assert package_shadow.get("current_signal") == package.get("final_signal")
               assert package_shadow.get("changed_from_current") is False
+
+              edge_shadow = package.get("edge_shadow") or {}
+              assert edge_shadow.get("current_signal") == package.get("final_signal")
+              assert edge_shadow.get("production_override") is False
+              assert edge_shadow.get("changed_from_current") is False
 
           print("SHADOW VALIDATION OK")
           print("Packages:", len(packages))
