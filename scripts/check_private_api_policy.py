@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(".")
 SKIP_DIRS = {".git", "__pycache__", ".venv", "node_modules"}
+SELF = "scripts/check_private_api_policy.py"
 
 AUTH_MARKERS = [
     "NICEHASH_API_SECRET",
@@ -15,7 +16,14 @@ AUTH_CODE_ALLOWLIST = {
 
 WORKFLOW_SECRET_ALLOWLIST = {
     ".github/workflows/collect-calibration.yml",
+    ".github/workflows/collect-shared-packages.yml",
     ".github/workflows/test-nicehash-private.yml",
+}
+
+PUBLIC_API_HOST_ALLOWLIST = {
+    "fetch_recent_blocks.py",
+    "scripts/collect_public_market_history.py",
+    "scripts/collect_realized_blocks.py",
 }
 
 FORBIDDEN_PRIVATE_METHOD_PATTERNS = [
@@ -40,6 +48,9 @@ for path in ROOT.rglob("*"):
     except (UnicodeDecodeError, OSError):
         continue
 
+    if relative == SELF:
+        continue
+
     if any(marker in content for marker in AUTH_MARKERS):
         allowed = (
             relative in AUTH_CODE_ALLOWLIST
@@ -51,9 +62,10 @@ for path in ROOT.rglob("*"):
             )
 
     if "api2.nicehash.com" in content:
-        if relative not in AUTH_CODE_ALLOWLIST and not relative.startswith(
-            "scripts/collect_public_market_history.py"
-        ) and relative not in {"fetch_recent_blocks.py"}:
+        if (
+            relative not in AUTH_CODE_ALLOWLIST
+            and relative not in PUBLIC_API_HOST_ALLOWLIST
+        ):
             violations.append(
                 f"direct api2.nicehash.com host use outside approved modules: {relative}"
             )
