@@ -45,6 +45,9 @@ jobs:
       - name: Build aggregate-only global calibration report
         run: python3 scripts/build_global_order_calibration.py
 
+      - name: Build Daily Package Stats
+        run: python3 scripts/build_daily_package_stats.py
+
       - name: Validate privacy and shadow-only guardrails
         run: |
           python3 - <<'PY'
@@ -53,6 +56,8 @@ jobs:
 
           report_path = Path("calibration/global-order-calibration.json")
           report = json.loads(report_path.read_text(encoding="utf-8"))
+          daily_path = Path("calibration/daily-package-stats.json")
+          daily = json.loads(daily_path.read_text(encoding="utf-8"))
 
           assert report.get("modelUse") == "NEW_CALIBRATED_SHADOW_ONLY"
           assert report.get("currentProductionModelChanged") is False
@@ -63,6 +68,14 @@ jobs:
           assert privacy.get("reportContainsAggregatesOnly") is True
 
           assert "matches" not in report
+
+          daily_privacy = daily.get("privacy") or {}
+          assert daily_privacy.get("individualGlobalOrdersStored") is False
+          assert daily_privacy.get("privateUserOrdersStored") is False
+          assert daily_privacy.get("customerIdentifiersStored") is False
+          assert daily_privacy.get("aggregateOnly") is True
+          assert isinstance(daily.get("rows"), list)
+
           assert not Path("nicehash-global-completed-orders.json").exists()
           assert not Path("global-order-matches.json").exists()
 
@@ -70,6 +83,7 @@ jobs:
           print("Confidence:", report.get("confidence"))
           print("Matched orders:", (report.get("overall") or {}).get("orders"))
           print("Hits:", (report.get("overall") or {}).get("hits"))
+          print("Daily package rows:", daily.get("rowCount"))
           PY
 
       - name: Persist aggregate global calibration
@@ -78,13 +92,14 @@ jobs:
           git config user.email "actions@github.com"
 
           git add calibration/global-order-calibration.json
+          git add calibration/daily-package-stats.json
 
           if git diff --cached --quiet; then
             echo "No global calibration changes"
             exit 0
           fi
 
-          git commit -m "Update global order calibration"
+          git commit -m "Update global calibration and daily package stats"
 
           for attempt in 1 2 3; do
             if git push; then
