@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 from datetime import datetime, timezone
@@ -35,13 +36,23 @@ def validate_feed(feed):
     )
 
 
+def canonical_feed_sha256(feed):
+    payload = json.dumps(
+        feed,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def load_existing():
-    rows = []
     commits = set()
+    feed_hashes = set()
     latest = None
 
     if not OUTPUT_FILE.exists():
-        return rows, commits, latest
+        return commits, feed_hashes, latest
 
     for line in OUTPUT_FILE.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -52,17 +63,23 @@ def load_existing():
         except json.JSONDecodeError:
             continue
 
-        rows.append(row)
-
         source_commit = row.get("source_commit")
         if source_commit:
             commits.add(str(source_commit))
+
+        saved_hash = row.get("feed_sha256")
+        if saved_hash:
+            feed_hashes.add(str(saved_hash))
+        else:
+            historical_feed = row.get("feed")
+            if isinstance(historical_feed, dict):
+                feed_hashes.add(canonical_feed_sha256(historical_feed))
 
         ts = parse_ts(row.get("collected_at"))
         if ts is not None and (latest is None or ts > latest):
             latest = ts
 
-    return rows, commits, latest
+    return commits, feed_hashes, latest
 
 
 def git_log_since(latest):
@@ -107,7 +124,7 @@ def load_feed_from_commit(sha):
     return json.loads(result.stdout)
 
 
-_, known_commits, latest_existing = load_existing()
+known_commits, known_feed_hashes, latest_existing = load_existing()
 candidates = git_log_since(latest_existing)
 
 added = []
@@ -130,6 +147,11 @@ for sha, committed_at in candidates:
         skipped_invalid += 1
         continue
 
+    feed_hash = canonical_feed_sha256(feed)
+    if feed_hash in known_feed_hashes:
+        skipped_existing += 1
+        continue
+
     collected_at = parse_ts(committed_at)
     if collected_at is None:
         skipped_invalid += 1
@@ -139,6 +161,7 @@ for sha, committed_at in candidates:
         "collected_at": collected_at.isoformat(),
         "source": "GIT_BUY_FEED_HISTORY",
         "source_commit": sha,
+        "feed_sha256": feed_hash,
         "feed_generated_at": (
             feed.get("generated_at")
             or feed.get("timestamp")
@@ -152,6 +175,7 @@ for sha, committed_at in candidates:
 
     added.append(snapshot)
     known_commits.add(sha)
+    known_feed_hashes.add(feed_hash)
 
     version = str(feed.get("relay_version"))
     relay_versions[version] = relay_versions.get(version, 0) + 1
