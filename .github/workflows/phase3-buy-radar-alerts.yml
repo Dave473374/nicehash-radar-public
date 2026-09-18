@@ -39,14 +39,53 @@ jobs:
           path = Path("/tmp/buy-radar-alerts.json")
           data = json.loads(path.read_text(encoding="utf-8"))
 
+          def signed(value):
+              if isinstance(value, (int, float)):
+                  return f"{value:+.2f}%"
+              return "n/a"
+
           for event in data.get("events") or []:
               title = f"BUY Radar {event.get('signal')} - {event.get('package')}"
+
+              edge = event.get("edgeShadow") or {}
+              market = event.get("publicMarket") or {}
+
+              edge_label = edge.get("label") or "UNKNOWN"
+              edge_score = edge.get("score")
+              edge_text = (
+                  f"{edge_label} ({edge_score:+.2f})"
+                  if isinstance(edge_score, (int, float))
+                  else edge_label
+              )
+
+              market_status = market.get("status") or "UNAVAILABLE"
+              if market_status == "READY":
+                  market_text = (
+                      f"READY {market.get('algorithm')} "
+                      f"orders={market.get('orders')} "
+                      f"priceΔ24={signed(market.get('priceVs24hMedianPercent'))} "
+                      f"ordersΔ24={signed(market.get('ordersVs24hMedianPercent'))} "
+                      f"speedΔ24={signed(market.get('speedVs24hMedianPercent'))}"
+                  )
+              elif market_status == "WARMING_UP":
+                  market_text = (
+                      f"WARMING_UP {market.get('algorithm')} "
+                      f"orders={market.get('orders')} "
+                      f"samples={market.get('samples24h')} "
+                      f"coverage={market.get('coverageHours24h')}h"
+                  )
+              else:
+                  market_text = f"{market_status} {market.get('algorithm') or ''}".strip()
+
               message = (
-                  f"coin={event.get('coin')} | "
-                  f"previous={event.get('previousSignal')} | "
-                  f"expected_return={event.get('expectedReturnPercent')}% | "
-                  f"quality_24h={event.get('qualityVs24hPercent')}% | "
-                  f"odds={event.get('nicehashOdds')}"
+                  f"CURRENT={event.get('signal')} | "
+                  f"EDGE={edge_text} | "
+                  f"MARKET={market_text} | "
+                  f"EV={event.get('expectedReturnPercent')}% | "
+                  f"Q24={signed(event.get('qualityVs24hPercent'))} | "
+                  f"Q7={signed(event.get('qualityVs7dPercent'))} | "
+                  f"odds={event.get('nicehashOdds')} | "
+                  f"previous={event.get('previousSignal')}"
               )
               print(f"::notice title={title}::{message}")
 
