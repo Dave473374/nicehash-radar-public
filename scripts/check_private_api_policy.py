@@ -18,6 +18,7 @@ WORKFLOW_SECRET_ALLOWLIST = {
     ".github/workflows/collect-calibration.yml",
     ".github/workflows/collect-shared-packages.yml",
     ".github/workflows/test-nicehash-private.yml",
+    ".github/workflows/validate-buy-radar-evidence.yml",
 }
 
 PUBLIC_API_HOST_ALLOWLIST = {
