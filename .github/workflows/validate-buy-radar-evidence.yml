@@ -1,0 +1,37 @@
+name: Validate BUY Radar Evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+
+      - name: Fetch personal EasyMining history read-only
+        env:
+          NICEHASH_API_KEY: ${{ secrets.NICEHASH_API_KEY }}
+          NICEHASH_API_SECRET: ${{ secrets.NICEHASH_API_SECRET }}
+          NICEHASH_ORG_ID: ${{ secrets.NICEHASH_ORG_ID }}
+          PRIVATE_EASYMINING_MAX_PAGES: "10"
+        run: python3 scripts/collect_completed_orders.py
+
+      - name: Match personal orders to Radar
+        run: python3 scripts/match_private_orders.py
+
+      - name: Build transient multi-source evidence scorecard
+        run: python3 scripts/build_evidence_scorecard.py
+
+      - name: Enforce Admin prohibition
+        run: python3 scripts/check_forbidden_admin_access.py
+
+      - name: Enforce private API read-only policy
+        run: python3 scripts/check_private_api_policy.py
