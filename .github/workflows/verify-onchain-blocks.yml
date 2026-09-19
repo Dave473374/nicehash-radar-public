@@ -1,0 +1,90 @@
+name: Verify On-Chain NiceHash Blocks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23,53 * * * *'
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/verify_onchain_blocks.py
+      - tests/test_onchain_verification.py
+      - .github/workflows/verify-onchain-blocks.yml
+      - docs/onchain-hit-verification.md
+  push:
+    branches: [main]
+    paths:
+      - scripts/verify_onchain_blocks.py
+      - tests/test_onchain_verification.py
+      - .github/workflows/verify-onchain-blocks.yml
+      - docs/onchain-hit-verification.md
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-onchain-blocks-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Safety guards
+        run: |
+          python3 scripts/check_forbidden_admin_access.py
+          python3 scripts/check_private_api_policy.py
+      - name: Offline tests
+        run: python3 -m unittest tests/test_onchain_verification.py -v
+
+  publish:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: verify-onchain-blocks-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Recheck code before public explorer calls
+        run: |
+          python3 scripts/check_forbidden_admin_access.py
+          python3 scripts/check_private_api_policy.py
+          python3 -m unittest tests/test_onchain_verification.py -v
+      - name: Verify public NiceHash blocks on-chain
+        run: python3 scripts/verify_onchain_blocks.py
+      - name: Persist public on-chain verification evidence
+        run: |
+          git config user.name 'NiceHash Radar Bot'
+          git config user.email 'actions@github.com'
+          git add calibration/onchain-block-verifications.jsonl research/onchain-verification-report.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'Update on-chain HIT verification evidence'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              exit 1
+            fi
+            sleep $((attempt * 2))
+          done
+          exit 1
