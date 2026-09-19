@@ -80,6 +80,7 @@ jobs:
       - name: Test research and Phase 0 without network or account credentials
         run: |
           python3 -m unittest discover -s tests -p 'test_market*.py' -v
+          python3 -m unittest tests.test_verified_hit_market_context -v
           python3 scripts/test_phase0_correctness.py
       - name: Analyze existing public files only
         run: |
@@ -134,6 +135,7 @@ jobs:
           python3 scripts/check_forbidden_admin_access.py
           python3 scripts/check_private_api_policy.py
           python3 -m unittest discover -s tests -p 'test_market*.py'
+          python3 -m unittest tests.test_verified_hit_market_context
       - name: Build report without changing source feeds
         run: |
           python3 scripts/build_market_edge_research.py
