@@ -14,7 +14,7 @@ def ev(coin="BCH", height=969090, block_hash=None, package=None):
     if block_hash is None:
         block_hash = f"{height:064x}"
     if package is None:
-        package = {"BCH":"Silver M","BTC":"Gold S","ZEC":"Bronze S","KAS":"Titanium S"}.get(coin,"X")
+        package = {"BCH":"Silver M","BTC":"Gold S","ZEC":"Bronze S","KAS":"Titanium S","DOGE":"Palladium M","LTC":"Palladium M"}.get(coin,"X")
     return {
         "eventId": f"{coin}-{height}",
         "coin": coin,
@@ -165,6 +165,69 @@ class OnchainTests(unittest.TestCase):
         self.assertEqual(r["status"],"CONFLICT_BLOCK_HASH")
         self.assertEqual(r["explorer"],base)
 
+    def test_palladium_doge_blockchair_chain_match_and_units(self):
+        height=6380758
+        h="1d407ec5d1f0d35df2089784cfa410bd58db85a6ff62ae1fede6b60c6a0e2150"
+        url=m.BLOCKCHAIR_BASE+f"/dogecoin/dashboards/block/{height}"
+        op=FakeOpener({url:{
+            "data": {str(height): {"block": {
+                "id": height, "hash": h, "time":"2026-09-19 12:00:00",
+                "difficulty":12345678.0, "reward":1000000000000,
+                "guessed_miner":"NiceHash"
+            }}},
+            "context":{"code":200}
+        }})
+        event=ev("DOGE",height,h)
+        event["payoutReward"]=970034412690
+        r=m.verify_event(event, opener=op, now="2026-09-19T00:00:00+00:00")
+        self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_NICEHASH_MINER_INFO")
+        self.assertEqual(r["mergedMiningFamily"],"Palladium")
+        self.assertEqual(r["mergedMiningChain"],"DOGE")
+        self.assertEqual(r["mergedMiningChainRole"],"AUXPOW_CHILD_CHAIN")
+        self.assertEqual(r["mergedMiningEvidenceScope"],"THIS_CHAIN_EVENT_ONLY")
+        self.assertFalse(r["pairedChainEvidenceClaimed"])
+        self.assertAlmostEqual(r["niceHashPayoutRewardNative"],9700.3441269,places=7)
+        self.assertAlmostEqual(r["coinbaseRewardNative"],10000.0,places=7)
+        self.assertAlmostEqual(r["payoutToCoinbasePercent"],97.003441,places=6)
+
+    def test_palladium_ltc_blockchair_chain_match(self):
+        height=3000000
+        h="a"*64
+        url=m.BLOCKCHAIR_BASE+f"/litecoin/dashboards/block/{height}"
+        op=FakeOpener({url:{
+            "data": {str(height): {"block": {
+                "id": height, "hash": h, "time":"2026-09-19 12:00:00",
+                "difficulty":999.0, "reward":625000000,
+                "guessed_miner":"Unknown"
+            }}},
+            "context":{"code":200}
+        }})
+        event=ev("LTC",height,h)
+        event["payoutReward"]=606250000
+        r=m.verify_event(event, opener=op)
+        self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_BLOCK_MATCH")
+        self.assertEqual(r["mergedMiningChainRole"],"PARENT_SCRYPT_CHAIN")
+        self.assertFalse(r["pairedChainEvidenceClaimed"])
+        self.assertAlmostEqual(r["niceHashPayoutRewardNative"],6.0625,places=8)
+        self.assertAlmostEqual(r["coinbaseRewardNative"],6.25,places=8)
+        self.assertAlmostEqual(r["payoutToCoinbasePercent"],97.0,places=6)
+
+    def test_palladium_hash_conflict_fails_closed(self):
+        height=6380758
+        actual="b"*64
+        expected="a"*64
+        url=m.BLOCKCHAIR_BASE+f"/dogecoin/dashboards/block/{height}"
+        op=FakeOpener({url:{
+            "data": {str(height): {"block": {
+                "id": height, "hash": actual, "reward":1000000000000
+            }}},
+            "context":{"code":200}
+        }})
+        r=m.verify_event(ev("DOGE",height,expected), opener=op)
+        self.assertEqual(r["status"],"CONFLICT_BLOCK_HASH")
+        self.assertEqual(r["onchainBlockHash"],actual)
+        self.assertFalse(r["pairedChainEvidenceClaimed"])
+
     def test_zec_block_match(self):
         height=3243734; h=f"{height:064x}"
         url=m.ZEC_BASE+f"/zcash/dashboards/block/{height}"
@@ -198,8 +261,25 @@ class OnchainTests(unittest.TestCase):
         self.assertEqual(r["status"],"CONFLICT_BLOCK_HASH")
 
     def test_unsupported_coin(self):
-        r=m.verify_event(ev("DOGE"))
+        r=m.verify_event(ev("RVN"))
         self.assertEqual(r["status"],"UNSUPPORTED_COIN")
+
+    def test_newly_supported_coin_retries_old_unsupported_ledger_row(self):
+        calls = []
+        def fake_verify(e, now=None):
+            calls.append(e["coin"])
+            return {**e, "eventId": e["eventId"], "status": "VERIFIED_ON_CHAIN_BLOCK_MATCH", "coin": e["coin"]}
+        with tempfile.TemporaryDirectory() as d:
+            inp=Path(d)/"in.jsonl"; led=Path(d)/"led.jsonl"; rep=Path(d)/"rep.json"
+            event=ev("DOGE",6380758,"1d407ec5d1f0d35df2089784cfa410bd58db85a6ff62ae1fede6b60c6a0e2150")
+            inp.write_text(json.dumps(event)+"\n")
+            led.write_text(json.dumps({
+                "eventId":event["eventId"],"coin":"DOGE","blockHeight":event["blockHeight"],
+                "status":"UNSUPPORTED_COIN"
+            })+"\n")
+            report=m.build(inp,led,rep,1,verifier=fake_verify,now="2026-09-19T00:00:00+00:00")
+        self.assertEqual(calls,["DOGE"])
+        self.assertEqual(report["verifiedByCoin"].get("DOGE"),1)
 
     def test_round_robin_prevents_kas_starvation(self):
         calls = []
@@ -224,6 +304,7 @@ class OnchainTests(unittest.TestCase):
             self.assertFalse(report["canRaiseBuySignal"])
             self.assertEqual(report["packageCoverageIntent"]["Bronze"],"ZEC")
             self.assertEqual(report["packageCoverageIntent"]["Titanium"],"KAS")
+            self.assertIn("LTC + DOGE", report["packageCoverageIntent"]["Palladium"])
 
 
 if __name__ == "__main__":
