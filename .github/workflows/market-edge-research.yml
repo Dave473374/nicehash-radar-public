@@ -94,6 +94,8 @@ jobs:
             --episodes /tmp/lag-episodes.jsonl --output /tmp/lag-report.json
           python3 scripts/build_alert_latency_report.py --output /tmp/alert-latency-report.json
           python3 scripts/build_verified_hit_market_context.py \
+            --pairs /tmp/market-edge-pairs.jsonl \
+            --episodes /tmp/lag-episodes.jsonl \
             --output /tmp/verified-hit-market-context.jsonl \
             --report /tmp/verified-hit-market-context-report.json
       - uses: actions/upload-artifact@v4
