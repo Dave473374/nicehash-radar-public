@@ -23,7 +23,8 @@ BLOCKCHAIR_BASE = "https://api.blockchair.com"
 BCH_NINJA_BASE = "https://explorer.bch.ninja"
 ZEC_BASE = BLOCKCHAIR_BASE
 KAS_BASE = "https://api.kaspa.org"
-SUPPORTED = {"BTC", "BCH", "ZEC", "KAS"}
+BLOCKCHAIR_CHAIN_SLUGS = {"LTC": "litecoin", "DOGE": "dogecoin"}
+SUPPORTED = {"BTC", "BCH", "ZEC", "KAS", "LTC", "DOGE"}
 KNOWN_TAGS = (
     (b"/NiceHashMining/", "NICEHASH_MINING_TAG"),
     (b"/NiceHashSolo/", "NICEHASH_SOLO_TAG"),
@@ -195,7 +196,7 @@ def first_blockchair_block(payload):
 
 
 def payout_native_from_public_reward(event):
-    """NiceHash public singleReward stores BTC-like payouts in 1e-8 native units."""
+    """Normalize public singleReward UTXO-chain payouts from 1e-8 native units."""
     raw = event.get("payoutReward")
     if isinstance(raw, bool):
         return None
@@ -206,7 +207,7 @@ def payout_native_from_public_reward(event):
     if not math.isfinite(value) or value < 0:
         return None
     coin = str(event.get("coin") or "").upper()
-    if coin in {"BTC", "BCH", "ZEC"}:
+    if coin in {"BTC", "BCH", "ZEC", "LTC", "DOGE"}:
         return value / 100_000_000
     return value
 
@@ -370,6 +371,87 @@ def verify_bch_ninja_hash(event, opener, now, primary_error=None, blockchair_err
 
 
 
+def verify_palladium_chain(event, opener, now):
+    """Verify the reported Palladium chain event without over-claiming its pair.
+
+    Palladium uses Scrypt merged mining. A public LTC or DOGE success event is
+    verified only against the chain named by that event. This function does not
+    infer that the paired chain also produced a reward.
+    """
+    coin = str(event.get("coin") or "").upper()
+    if coin not in BLOCKCHAIR_CHAIN_SLUGS:
+        raise ValueError("Unsupported Palladium chain")
+    result = common(event, now)
+    height = int(event.get("blockHeight"))
+    slug = BLOCKCHAIR_CHAIN_SLUGS[coin]
+    payload = get(opener, BLOCKCHAIR_BASE, f"/{slug}/dashboards/block/{height}")
+    block = first_blockchair_block(payload)
+    block_hash = str(block.get("hash") or "").lower().strip()
+    expected = str(event.get("blockHash") or "").lower().strip()
+    chain_role = "AUXPOW_CHILD_CHAIN" if coin == "DOGE" else "PARENT_SCRYPT_CHAIN"
+
+    if len(expected) == 64 and block_hash and expected != block_hash:
+        return {
+            **result,
+            "schemaVersion": 3,
+            "status": "CONFLICT_BLOCK_HASH",
+            "explorer": BLOCKCHAIR_BASE,
+            "onchainBlockHash": block_hash,
+            "mergedMiningFamily": "Palladium",
+            "mergedMiningChain": coin,
+            "mergedMiningChainRole": chain_role,
+            "mergedMiningEvidenceScope": "THIS_CHAIN_EVENT_ONLY",
+            "pairedChainEvidenceClaimed": False,
+        }
+
+    on_height = int(block.get("id") or block.get("height") or height)
+    if on_height != height:
+        raise ValueError("Palladium chain block height mismatch")
+
+    reward_raw = block.get("reward")
+    reward_native = float(reward_raw) / 100_000_000 if finite(reward_raw) else None
+    payout_native = payout_native_from_public_reward(event)
+    payout_ratio = None
+    if payout_native is not None and reward_native and reward_native > 0:
+        payout_ratio = payout_native / reward_native * 100
+
+    miner = block.get("guessed_miner")
+    nicehash_label = isinstance(miner, str) and "nicehash" in miner.lower()
+    return {
+        **result,
+        "schemaVersion": 3,
+        "status": (
+            "VERIFIED_ON_CHAIN_NICEHASH_MINER_INFO"
+            if nicehash_label
+            else "VERIFIED_ON_CHAIN_BLOCK_MATCH"
+        ),
+        "verificationStrength": (
+            "BLOCK_HEIGHT_HASH_AND_NICEHASH_MINER_LABEL_PALLADIUM_CHAIN"
+            if nicehash_label
+            else "BLOCK_HEIGHT_HASH_PALLADIUM_CHAIN_EVENT"
+        ),
+        "explorer": BLOCKCHAIR_BASE,
+        "onchainBlockHash": block_hash or None,
+        "onchainTimestamp": block.get("time") or block.get("date"),
+        "onchainDifficulty": block.get("difficulty"),
+        "coinbaseRewardRaw": reward_raw,
+        "coinbaseRewardNative": round(reward_native, 12) if reward_native is not None else None,
+        "niceHashPayoutRewardNative": round(payout_native, 12) if payout_native is not None else None,
+        "payoutToCoinbasePercent": round(payout_ratio, 6) if payout_ratio is not None else None,
+        "explorerMinerLabel": miner,
+        "coinbaseTagClass": (
+            "BLOCKCHAIR_NICEHASH_MINER_LABEL"
+            if nicehash_label
+            else "NOT_CHECKED_PALLADIUM_BLOCKCHAIR"
+        ),
+        "mergedMiningFamily": "Palladium",
+        "mergedMiningChain": coin,
+        "mergedMiningChainRole": chain_role,
+        "mergedMiningEvidenceScope": "THIS_CHAIN_EVENT_ONLY",
+        "pairedChainEvidenceClaimed": False,
+    }
+
+
 def verify_zec(event, opener, now):
     result = common(event, now)
     height = int(event.get("blockHeight"))
@@ -462,6 +544,8 @@ def verify_event(event, opener=None, now=None):
             return primary
         if coin == "BTC":
             return verify_mempool(event, opener, now)
+        if coin in {"LTC", "DOGE"}:
+            return verify_palladium_chain(event, opener, now)
         if coin == "ZEC":
             return verify_zec(event, opener, now)
         if coin == "KAS":
@@ -506,7 +590,8 @@ def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, 
         if coin not in SUPPORTED:
             continue
         previous = latest.get(eid)
-        if previous and previous.get("status") != "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH":
+        retryable = {"SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH", "UNSUPPORTED_COIN"}
+        if previous and previous.get("status") not in retryable:
             continue
         queues[coin].append(event)
 
@@ -559,6 +644,7 @@ def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, 
             "Silver": "BCH",
             "Bronze": "ZEC",
             "Titanium": "KAS",
+            "Palladium": "LTC + DOGE merged mining; each public event verified on its named chain only",
         },
         "policy": "Independent chain audit only. Verified HITs are numerator/context evidence; no chain explorer supplies missing EasyMining tickets or a MISS denominator.",
     }
