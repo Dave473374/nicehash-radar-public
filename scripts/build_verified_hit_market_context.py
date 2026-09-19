@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
+from statistics import median
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,8 @@ DEFAULT_REPORT = Path("research/verified-hit-market-context-report.json")
 
 MAX_CONTEXT_AGE_SECONDS = 15 * 60
 MAX_RECENT_LAG_MINUTES = 60
+PRE_HIT_WINDOWS_MINUTES = (15, 30, 60)
+PRE_HIT_BASELINE_TOLERANCE_SECONDS = 10 * 60
 
 
 def digest(path: Path) -> str:
@@ -117,6 +120,173 @@ def verified_hit(row: dict) -> bool:
     return str(row.get("status") or "").startswith("VERIFIED_ON_CHAIN")
 
 
+def finite_number(value: Any, *, positive: bool = False) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(number):
+        return None
+    if positive and number <= 0:
+        return None
+    return number
+
+
+def percent_change(end: Any, start: Any, *, positive: bool = True) -> float | None:
+    a = finite_number(start, positive=positive)
+    b = finite_number(end, positive=positive)
+    if a is None or b is None or a == 0:
+        return None
+    return round((b / a - 1) * 100, 6)
+
+
+def same_pair_series(a: dict, b: dict) -> bool:
+    keys = (
+        "package",
+        "size",
+        "currency",
+        "coin",
+        "mergeCoin",
+        "marketAlgorithm",
+        "relayVersion",
+        "marketUnitSignature",
+    )
+    return all(a.get(key) == b.get(key) for key in keys)
+
+
+def build_pre_hit_context(exact_rows: list[dict], hit_at: datetime | None) -> dict:
+    """Describe exact-package paired quote movement before a verified HIT.
+
+    This is success-only reward-time context. It never supplies a MISS
+    denominator or entry-time evidence and it does not modify the locked lag
+    protocol.
+    """
+    if hit_at is None:
+        return {"status": "NO_USABLE_HIT_TIME", "windows": []}
+
+    paired = [
+        row for row in exact_rows
+        if row.get("pairStatus") == "PAIRED"
+        and row["_quote"] <= hit_at
+        and row["_observed"] <= hit_at
+    ]
+    if not paired:
+        return {"status": "NO_CAUSAL_PAIRED_EXACT_PACKAGE_QUOTES", "windows": []}
+
+    endpoint = paired[-1]
+    endpoint_age = (hit_at - endpoint["_quote"]).total_seconds()
+    if endpoint_age > MAX_CONTEXT_AGE_SECONDS:
+        return {
+            "status": "NO_FRESH_PAIRED_ENDPOINT",
+            "endpointQuoteAt": endpoint.get("quoteAt"),
+            "endpointAgeSeconds": round(endpoint_age, 3),
+            "windows": [],
+        }
+
+    series = [row for row in paired if same_pair_series(row, endpoint)]
+    windows = []
+    for horizon in PRE_HIT_WINDOWS_MINUTES:
+        target = hit_at - timedelta(minutes=horizon)
+        candidates = [
+            row for row in series
+            if row["_quote"] <= target
+            and row["_observed"] <= hit_at
+        ]
+        if not candidates:
+            windows.append({
+                "horizonMinutes": horizon,
+                "status": "NO_BASELINE_AT_OR_BEFORE_TARGET",
+                "targetAt": iso(target),
+            })
+            continue
+        baseline = candidates[-1]
+        distance = (target - baseline["_quote"]).total_seconds()
+        if distance > PRE_HIT_BASELINE_TOLERANCE_SECONDS:
+            windows.append({
+                "horizonMinutes": horizon,
+                "status": "BASELINE_TOO_FAR_FROM_TARGET",
+                "targetAt": iso(target),
+                "baselineQuoteAt": baseline.get("quoteAt"),
+                "baselineDistanceSeconds": round(distance, 3),
+            })
+            continue
+
+        start_expected = finite_number(baseline.get("feedExpectedReturnPercent"))
+        end_expected = finite_number(endpoint.get("feedExpectedReturnPercent"))
+        expected_delta = None
+        if start_expected is not None and end_expected is not None:
+            expected_delta = round(end_expected - start_expected, 6)
+
+        work_change = percent_change(endpoint.get("workPerNative"), baseline.get("workPerNative"))
+        ticket_cost_change = None
+        if work_change is not None and work_change > -100:
+            ticket_cost_change = round((1 / (1 + work_change / 100) - 1) * 100, 6)
+
+        windows.append({
+            "horizonMinutes": horizon,
+            "status": "MATCHED",
+            "targetAt": iso(target),
+            "baselineQuoteAt": baseline.get("quoteAt"),
+            "baselineObservedAt": baseline.get("observedAt"),
+            "baselineDistanceSeconds": round(distance, 3),
+            "endpointQuoteAt": endpoint.get("quoteAt"),
+            "endpointObservedAt": endpoint.get("observedAt"),
+            "endpointAgeSeconds": round(endpoint_age, 3),
+            "workPerNativeChangePercent": work_change,
+            "ticketCostPerWorkChangePercent": ticket_cost_change,
+            "marketPriceRawChangePercent": percent_change(endpoint.get("marketPriceRaw"), baseline.get("marketPriceRaw")),
+            "primaryDifficultyChangePercent": percent_change(endpoint.get("primaryDifficulty"), baseline.get("primaryDifficulty")),
+            "mergeDifficultyChangePercent": percent_change(endpoint.get("mergeDifficulty"), baseline.get("mergeDifficulty")),
+            "feedExpectedReturnChangePercentagePoints": expected_delta,
+            "baselineSignal": baseline.get("currentSignal"),
+            "endpointSignal": endpoint.get("currentSignal"),
+            "interpretation": "SUCCESS_ONLY_PRE_HIT_CONTEXT_NOT_CAUSAL_OR_HIT_RATE_EVIDENCE",
+        })
+
+    return {
+        "status": "AVAILABLE" if any(row["status"] == "MATCHED" for row in windows) else "NO_MATCHED_WINDOWS",
+        "endpointQuoteAt": endpoint.get("quoteAt"),
+        "endpointObservedAt": endpoint.get("observedAt"),
+        "endpointAgeSeconds": round(endpoint_age, 3),
+        "windows": windows,
+    }
+
+
+def summarize_pre_hit_windows(rows: list[dict]) -> dict:
+    groups: dict[tuple[str, str, int], list[dict]] = defaultdict(list)
+    for row in rows:
+        context = row.get("preHitContext") if isinstance(row.get("preHitContext"), dict) else {}
+        for window in context.get("windows") or []:
+            if not isinstance(window, dict) or window.get("status") != "MATCHED":
+                continue
+            horizon = window.get("horizonMinutes")
+            if not isinstance(horizon, int):
+                continue
+            groups[(str(row.get("coin") or ""), str(row.get("packageName") or ""), horizon)].append(window)
+
+    out = {}
+    for (coin, package, horizon), items in sorted(groups.items()):
+        key = f"{coin}|{package}|{horizon}m"
+        summary = {"matchedHits": len(items)}
+        for field in (
+            "workPerNativeChangePercent",
+            "ticketCostPerWorkChangePercent",
+            "marketPriceRawChangePercent",
+            "primaryDifficultyChangePercent",
+            "mergeDifficultyChangePercent",
+            "feedExpectedReturnChangePercentagePoints",
+        ):
+            values = [
+                float(item[field]) for item in items
+                if finite_number(item.get(field)) is not None
+            ]
+            summary[f"median{field[0].upper()}{field[1:]}"] = round(median(values), 6) if values else None
+        out[key] = summary
+    return out
+
+
 def build_context(onchain_rows: list[dict], pair_rows: list[dict], episode_rows: list[dict], now: datetime) -> tuple[list[dict], dict]:
     counts = Counter()
 
@@ -184,6 +354,7 @@ def build_context(onchain_rows: list[dict], pair_rows: list[dict], episode_rows:
             "usedForBuyDecisions": False,
             "marketContext": None,
             "lagContext": None,
+            "preHitContext": None,
         }
         by_coin[coin]["verifiedHits"] += 1
         by_package[package]["verifiedHits"] += 1
@@ -195,6 +366,13 @@ def build_context(onchain_rows: list[dict], pair_rows: list[dict], episode_rows:
             and pair["_quote"] <= hit_at
             and pair["_observed"] <= hit_at
         ]
+
+        record["preHitContext"] = build_pre_hit_context(exact_rows, hit_at)
+        pre_hit_status = record["preHitContext"]["status"]
+        counts[f"PRE_HIT_{pre_hit_status}"] += 1
+        if pre_hit_status == "AVAILABLE":
+            by_coin[coin]["preHitContextAvailable"] += 1
+            by_package[package]["preHitContextAvailable"] += 1
 
         if not pairs_by_package.get(package):
             context_status = "NO_EXACT_PACKAGE_SERIES"
@@ -332,6 +510,7 @@ def build_context(onchain_rows: list[dict], pair_rows: list[dict], episode_rows:
         },
         "signalAtFreshHitContextCounts": dict(signal_counts),
         "lagContextCounts": dict(lag_counts),
+        "preHitWindowSummary": summarize_pre_hit_windows(output),
         "byCoin": {key: dict(value) for key, value in sorted(by_coin.items())},
         "byPackage": {key: dict(value) for key, value in sorted(by_package.items())},
         "settings": {
@@ -340,6 +519,9 @@ def build_context(onchain_rows: list[dict], pair_rows: list[dict], episode_rows:
             "exactPackageOnly": True,
             "eventCoinMayMatchPrimaryOrMergeCoin": True,
             "quoteAndObservationMustPrecedeHit": True,
+            "preHitWindowsMinutes": list(PRE_HIT_WINDOWS_MINUTES),
+            "preHitBaselineToleranceSeconds": PRE_HIT_BASELINE_TOLERANCE_SECONDS,
+            "preHitRequiresFreshPairedEndpoint": True,
         },
         "verdict": "DESCRIPTIVE_SUCCESS_CONTEXT_ONLY_NO_VERIFIED_INCREMENTAL_EDGE",
         "limitations": [
@@ -349,6 +531,7 @@ def build_context(onchain_rows: list[dict], pair_rows: list[dict], episode_rows:
             "Package names are matched exactly; M/L/Team/S are never substituted for one another.",
             "Only quotes already observed before the block are eligible; future observations are excluded.",
             "A market PAIR is a relative public statistic, not a verified executable EasyMining purchase price.",
+            "Pre-HIT windows are success-only descriptive trajectories; without matched MISS/control entry states they are not predictive evidence.",
         ],
         "counts": dict(counts),
     }

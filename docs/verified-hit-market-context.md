@@ -43,6 +43,32 @@ preceded the HIT by at most 60 minutes. It records separately whether:
 These distinctions prevent late retrospective episode capture from being
 misrepresented as a live signal.
 
+## Pre-HIT exact-package windows
+
+For every verified HIT with a usable exact-package quote series, the research
+also builds descriptive 15/30/60-minute pre-HIT windows.
+
+The endpoint is the latest valid PAIRED quote already observed before the
+block and no more than 15 minutes old. Each baseline must:
+
+- belong to the exact same package and series;
+- already have been observed before the block;
+- be at or before the requested 15/30/60-minute target;
+- be no more than 10 minutes older than that target.
+
+Matched windows record changes in:
+
+- workPerNative and the inverse ticket-cost-per-work measure;
+- public market price statistic;
+- primary-chain difficulty;
+- merged-chain difficulty when present;
+- feed expected-return percentage points;
+- start and endpoint Radar signal.
+
+These windows are intentionally **not** added to the locked lag protocol v1.
+They are a separate success-only descriptive layer used to inspect what the
+same package looked like before a real independently verified HIT.
+
 ## Critical interpretation limits
 
 Every on-chain input row is a success event. There is no MISS denominator here,
@@ -56,6 +82,11 @@ remains the role of the existing private completed-order calibration path.
 A HIT that occurs near a pricing-lag episode is descriptive evidence only. It
 does not prove that the lag caused the HIT or that buying the package at that
 time had positive expected value.
+
+Likewise, a pre-HIT trajectory cannot by itself prove predictive value. The
+on-chain dataset contains winners only; a matched MISS/control entry-state
+population is still required before a pre-HIT pattern can be treated as an
+incremental edge.
 
 ## Outputs
 

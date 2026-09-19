@@ -204,6 +204,92 @@ class VerifiedHitMarketContextTests(unittest.TestCase):
             "NO_RECENT_EXACT_PACKAGE_LAG_EPISODE",
         )
 
+    def test_pre_hit_windows_use_only_exact_package_causal_pairs(self):
+        early = pair(
+            quote="2026-09-19T15:20:00+00:00",
+            observed="2026-09-19T15:20:01+00:00",
+            signal="WAIT",
+        )
+        early.update({
+            "workPerNative": 1.00e19,
+            "marketPriceRaw": 5.5e-7,
+            "primaryDifficulty": 90_000_000,
+            "mergeDifficulty": 50_000_000,
+            "feedExpectedReturnPercent": 80.0,
+        })
+        middle = pair(
+            quote="2026-09-19T15:55:00+00:00",
+            observed="2026-09-19T15:55:01+00:00",
+            signal="WAIT",
+        )
+        middle.update({
+            "workPerNative": 1.05e19,
+            "marketPriceRaw": 5.8e-7,
+            "primaryDifficulty": 89_000_000,
+            "mergeDifficulty": 49_000_000,
+            "feedExpectedReturnPercent": 82.0,
+        })
+        late = pair(
+            quote="2026-09-19T16:20:53+00:00",
+            observed="2026-09-19T16:20:54+00:00",
+            signal="GOOD",
+        )
+        late.update({
+            "workPerNative": 1.10e19,
+            "marketPriceRaw": 6.1e-7,
+            "primaryDifficulty": 88_000_000,
+            "mergeDifficulty": 48_000_000,
+            "feedExpectedReturnPercent": 84.0,
+        })
+        rows, report = m.build_context([hit()], [early, middle, late], [], self.now())
+        ctx = rows[0]["preHitContext"]
+        self.assertEqual(ctx["status"], "AVAILABLE")
+        matched = {w["horizonMinutes"]: w for w in ctx["windows"] if w["status"] == "MATCHED"}
+        self.assertIn(30, matched)
+        self.assertIn(60, matched)
+        self.assertAlmostEqual(matched[30]["workPerNativeChangePercent"], (1.10/1.05-1)*100, places=6)
+        self.assertAlmostEqual(matched[60]["marketPriceRawChangePercent"], (6.1/5.5-1)*100, places=6)
+        self.assertEqual(matched[30]["baselineSignal"], "WAIT")
+        self.assertEqual(matched[30]["endpointSignal"], "GOOD")
+        self.assertEqual(report["byCoin"]["DOGE"]["preHitContextAvailable"], 1)
+        self.assertTrue(any(key.startswith("DOGE|Palladium M|") for key in report["preHitWindowSummary"]))
+
+    def test_pre_hit_windows_never_use_future_observation(self):
+        baseline = pair(
+            quote="2026-09-19T15:55:00+00:00",
+            observed="2026-09-19T16:30:00+00:00",
+        )
+        endpoint = pair(
+            quote="2026-09-19T16:20:53+00:00",
+            observed="2026-09-19T16:20:54+00:00",
+        )
+        rows, _ = m.build_context([hit()], [baseline, endpoint], [], self.now())
+        windows = rows[0]["preHitContext"]["windows"]
+        self.assertFalse(any(w.get("status") == "MATCHED" for w in windows))
+
+    def test_pre_hit_windows_do_not_substitute_package_size(self):
+        rows, _ = m.build_context(
+            [hit(package="Palladium L")],
+            [
+                pair(package="Palladium M", quote="2026-09-19T15:55:00+00:00"),
+                pair(package="Palladium M", quote="2026-09-19T16:20:53+00:00"),
+            ],
+            [],
+            self.now(),
+        )
+        self.assertEqual(
+            rows[0]["preHitContext"]["status"],
+            "NO_CAUSAL_PAIRED_EXACT_PACKAGE_QUOTES",
+        )
+
+    def test_pre_hit_requires_fresh_paired_endpoint(self):
+        old = pair(
+            quote="2026-09-19T15:50:00+00:00",
+            observed="2026-09-19T15:50:01+00:00",
+        )
+        rows, _ = m.build_context([hit()], [old], [], self.now())
+        self.assertEqual(rows[0]["preHitContext"]["status"], "NO_FRESH_PAIRED_ENDPOINT")
+
     def test_non_verified_ledger_rows_are_excluded(self):
         rows, report = m.build_context(
             [hit(status="CONFLICT_BLOCK_HASH")],
