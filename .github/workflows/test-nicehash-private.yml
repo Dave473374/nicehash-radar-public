@@ -18,7 +18,9 @@ on:
       - scripts/match_private_orders_market_context.py
       - scripts/match_private_orders_radar_context.py
       - scripts/audit_private_order_git_feed_coverage.py
+      - scripts/match_private_orders_git_feed_context.py
       - tests/test_private_order_market_context.py
+      - tests/test_private_git_feed_context.py
       - tests/test_private_git_feed_coverage.py
       - tests/test_private_order_radar_context.py
       - tests/test_private_order_match_diagnostics.py
@@ -46,6 +48,7 @@ jobs:
           python3 -m unittest tests.test_private_order_market_context -v
           python3 -m unittest tests.test_private_order_radar_context -v
           python3 -m unittest tests.test_private_git_feed_coverage -v
+          python3 -m unittest tests.test_private_git_feed_context -v
           python3 -m unittest tests.test_private_order_match_diagnostics -v
 
   private:
@@ -79,6 +82,8 @@ jobs:
         run: python3 scripts/match_private_orders.py > /tmp/private-order-match.log
       - name: Audit Git buy-feed coverage for private entry gaps
         run: python3 scripts/audit_private_order_git_feed_coverage.py
+      - name: Build Git buy-feed pre-entry HIT MISS context
+        run: python3 scripts/match_private_orders_git_feed_context.py
       - name: Build Radar-only pre-entry context
         run: python3 scripts/match_private_orders_radar_context.py
       - name: Join entries to public market edge context
@@ -95,7 +100,9 @@ jobs:
           result = json.loads(Path('/tmp/private-order-market-context.json').read_text(encoding='utf-8'))
           radar_only = json.loads(Path('/tmp/private-order-radar-preentry.json').read_text(encoding='utf-8'))
           git_coverage = json.loads(Path('/tmp/private-order-git-feed-coverage.json').read_text(encoding='utf-8'))
+          git_context = json.loads(Path('/tmp/private-order-git-feed-context.json').read_text(encoding='utf-8'))
           summary = result.get('preEntryFeatureSummary') or {}
+          git_context_summary = git_context.get('summary') or {}
           radar_summary = radar_only.get('summary') or {}
           allowed = {'Palladium S', 'Palladium M', 'Palladium L', 'Team Palladium'}
           skip_by_package = {
@@ -166,6 +173,21 @@ jobs:
               for key, value in (git_coverage.get('freshExactGitFeedByPackageOutcome') or {}).items()
               if family_key(key)
           }
+          git_context_endpoints = {
+              key: value
+              for key, value in (git_context_summary.get('endpointStatusByPackageOutcome') or {}).items()
+              if family_key(key)
+          }
+          git_context_windows = {
+              key: value
+              for key, value in (git_context_summary.get('byPackageHorizonOutcome') or {}).items()
+              if family_key(key)
+          }
+          git_context_comparisons = {
+              key: value
+              for key, value in (git_context_summary.get('hitMinusMiss') or {}).items()
+              if family_key(key)
+          }
 
           by_outcome = {
               key: value
@@ -203,6 +225,9 @@ jobs:
               'radarOnlyHitMinusMiss': dict(sorted(radar_only_comparisons.items())),
               'gitFeedAgeBucketsByPackageOutcome': dict(sorted(git_feed_buckets.items())),
               'freshExactGitFeedByPackageOutcome': dict(sorted(git_feed_fresh.items())),
+              'gitFeedEndpointStatusByPackageOutcome': dict(sorted(git_context_endpoints.items())),
+              'gitFeedByPackageHorizonOutcome': dict(sorted(git_context_windows.items())),
+              'gitFeedHitMinusMiss': dict(sorted(git_context_comparisons.items())),
               'marketContextOrdersByOutcome': orders,
               'coverageByOutcomeStatus': coverage,
               'byPackageHorizonOutcome': by_outcome,
@@ -221,6 +246,7 @@ jobs:
               Path('/tmp/nicehash-completed-orders.json'),
               Path('/tmp/private-order-matches.json'),
               Path('/tmp/private-order-git-feed-coverage.json'),
+              Path('/tmp/private-order-git-feed-context.json'),
               Path('/tmp/private-order-radar-preentry.json'),
               Path('/tmp/private-order-market-context.json'),
           ):
@@ -236,6 +262,7 @@ jobs:
           rm -f /tmp/nicehash-completed-orders.json
           rm -f /tmp/private-order-matches.json
           rm -f /tmp/private-order-git-feed-coverage.json
+          rm -f /tmp/private-order-git-feed-context.json
           rm -f /tmp/private-order-radar-preentry.json
           rm -f /tmp/private-order-market-context.json
           rm -f /tmp/private-order-match.log
