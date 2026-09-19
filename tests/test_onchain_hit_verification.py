@@ -42,6 +42,8 @@ class FakeOpener:
         url=request.full_url
         if url not in self.mapping: raise RuntimeError("missing fixture")
         val=self.mapping[url]
+        if isinstance(val, Exception):
+            raise val
         data = val if isinstance(val, bytes) else val.encode() if isinstance(val, str) else json.dumps(val).encode()
         return FakeResponse(url,data)
 
@@ -68,6 +70,48 @@ class OnchainTests(unittest.TestCase):
         h,op=mempool_fixture(tag=b"/NiceHashMining/")
         r=m.verify_event(ev(block_hash=h), opener=op)
         self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_OTHER_NICEHASH_TAG")
+
+    def test_bch_blockchair_fallback_verifies_969090_and_units(self):
+        height=969090
+        h="000000000000000000661729e061860fc71d945b3adc7b91ebb211dcdf3abc8e"
+        primary=m.MEMPOOL_BASES["BCH"]+f"/api/block-height/{height}"
+        fallback=m.BLOCKCHAIR_BASE+f"/bitcoin-cash/dashboards/block/{height}"
+        op=FakeOpener({
+            primary: RuntimeError("primary unavailable"),
+            fallback: {
+                "data": {str(height): {"block": {
+                    "id": height,
+                    "hash": h,
+                    "time": "2026-09-18 22:30:00",
+                    "difficulty": 413808617276.17,
+                    "reward": 312512380,
+                    "guessed_miner": "Unknown",
+                }}},
+                "context": {"code": 200},
+            },
+        })
+        event=ev("BCH",height,h)
+        event["payoutReward"]=303137009
+        r=m.verify_event(event, opener=op, now="2026-09-19T00:00:00+00:00")
+        self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_BLOCK_MATCH")
+        self.assertEqual(r["verificationStrength"],"BLOCK_HEIGHT_HASH_INDEPENDENT_EXPLORER_FALLBACK")
+        self.assertEqual(r["primaryErrorType"],"RuntimeError")
+        self.assertAlmostEqual(r["niceHashPayoutRewardNative"],3.03137009,places=8)
+        self.assertAlmostEqual(r["coinbaseRewardNative"],3.1251238,places=7)
+        self.assertAlmostEqual(r["payoutToCoinbasePercent"],97.000000,places=4)
+        self.assertEqual(r["coinbaseTagClass"],"NOT_CHECKED_BCH_BLOCKCHAIR_FALLBACK")
+
+    def test_bch_primary_hash_conflict_is_not_hidden_by_fallback(self):
+        height=969090
+        actual=f"{height:064x}"
+        wrong="f"*64
+        base=m.MEMPOOL_BASES["BCH"]
+        op=FakeOpener({
+            base+f"/api/block-height/{height}": actual,
+        })
+        r=m.verify_event(ev("BCH",height,wrong), opener=op)
+        self.assertEqual(r["status"],"CONFLICT_BLOCK_HASH")
+        self.assertEqual(r["explorer"],base)
 
     def test_zec_block_match(self):
         height=3243734; h=f"{height:064x}"
