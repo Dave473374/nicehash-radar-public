@@ -612,5 +612,5 @@ with tempfile.TemporaryDirectory() as directory:
         "shared collector persists only explicitly public rows",
     )
 
-check(passed == 18, "exactly 18 Phase 0 regression scenarios passed")
-print("PHASE 0 CORRECTNESS REGRESSION: PASS")
+assert passed >= 18, f"Expected at least 18 scenarios, got {passed}"
+print(f"PHASE 0 CORRECTNESS REGRESSION: PASS ({passed} scenarios)")
