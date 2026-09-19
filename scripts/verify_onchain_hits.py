@@ -20,6 +20,7 @@ MAX_RESPONSE_BYTES = 4_000_000
 
 MEMPOOL_BASES = {"BTC": "https://mempool.space", "BCH": "https://bchexplorer.cash"}
 BLOCKCHAIR_BASE = "https://api.blockchair.com"
+BCH_NINJA_BASE = "https://explorer.bch.ninja"
 ZEC_BASE = BLOCKCHAIR_BASE
 KAS_BASE = "https://api.kaspa.org"
 SUPPORTED = {"BTC", "BCH", "ZEC", "KAS"}
@@ -44,7 +45,7 @@ def finite(value):
 
 
 def get(opener, base, path, json_expected=True):
-    if base not in set(MEMPOOL_BASES.values()) | {BLOCKCHAIR_BASE, KAS_BASE}:
+    if base not in set(MEMPOOL_BASES.values()) | {BLOCKCHAIR_BASE, BCH_NINJA_BASE, KAS_BASE}:
         raise ValueError("Explorer host not allowlisted")
     if not path.startswith("/"):
         raise ValueError("Explorer path invalid")
@@ -265,6 +266,110 @@ def verify_bch_blockchair(event, opener, now, primary_error=None):
     }
 
 
+def _bch_ninja_block(payload, height):
+    """Find exactly one height/hash block object in the public BCH Ninja JSON."""
+    matches = []
+
+    def walk(value, depth=0):
+        if depth > 5:
+            return
+        if isinstance(value, dict):
+            raw_height = value.get("height")
+            if raw_height is None:
+                raw_height = value.get("blockHeight")
+            raw_hash = value.get("hash")
+            if raw_hash is None:
+                raw_hash = value.get("blockHash")
+            try:
+                parsed_height = int(raw_height)
+            except (TypeError, ValueError):
+                parsed_height = None
+            block_hash = str(raw_hash or "").lower().strip()
+            if parsed_height == height and len(block_hash) == 64:
+                matches.append(value)
+            for child in value.values():
+                if isinstance(child, (dict, list)):
+                    walk(child, depth + 1)
+        elif isinstance(value, list):
+            for child in value:
+                if isinstance(child, (dict, list)):
+                    walk(child, depth + 1)
+
+    walk(payload)
+    unique = {}
+    for item in matches:
+        block_hash = str(item.get("hash") or item.get("blockHash") or "").lower().strip()
+        unique.setdefault(block_hash, item)
+    if len(unique) != 1:
+        raise ValueError("BCH Ninja response did not contain exactly one matching height/hash")
+    block_hash, item = next(iter(unique.items()))
+    return block_hash, item
+
+
+def verify_bch_ninja_hash(event, opener, now, primary_error=None, blockchair_error=None):
+    """Last-resort BCH verification using BCH Ninja's public JSON block route."""
+    result = common(event, now)
+    height = int(event.get("blockHeight"))
+    payload = get(
+        opener,
+        BCH_NINJA_BASE,
+        f"/api/blocks-by-height/{height}",
+    )
+    block_hash, block = _bch_ninja_block(payload, height)
+    expected = str(event.get("blockHash") or "").lower().strip()
+    if len(expected) == 64 and expected != block_hash:
+        return {
+            **result,
+            "schemaVersion": 3,
+            "status": "CONFLICT_BLOCK_HASH",
+            "explorer": BCH_NINJA_BASE,
+            "fallbackFrom": [MEMPOOL_BASES["BCH"], BLOCKCHAIR_BASE],
+            "primaryErrorType": primary_error,
+            "blockchairErrorType": blockchair_error,
+            "onchainBlockHash": block_hash,
+        }
+
+    pool_info = block.get("poolInfo") if isinstance(block.get("poolInfo"), dict) else {}
+    miner = (
+        pool_info.get("poolName")
+        or block.get("miner")
+        or block.get("minerName")
+    )
+    nicehash_label = isinstance(miner, str) and "nicehash" in miner.lower()
+
+    return {
+        **result,
+        "schemaVersion": 3,
+        "status": (
+            "VERIFIED_ON_CHAIN_NICEHASH_MINER_INFO"
+            if nicehash_label
+            else "VERIFIED_ON_CHAIN_BLOCK_MATCH"
+        ),
+        "verificationStrength": (
+            "BLOCK_HEIGHT_HASH_AND_NICEHASH_MINER_LABEL_SECOND_FALLBACK"
+            if nicehash_label
+            else "BLOCK_HEIGHT_HASH_PUBLIC_EXPLORER_SECOND_FALLBACK"
+        ),
+        "explorer": BCH_NINJA_BASE,
+        "fallbackFrom": [MEMPOOL_BASES["BCH"], BLOCKCHAIR_BASE],
+        "primaryErrorType": primary_error,
+        "blockchairErrorType": blockchair_error,
+        "onchainBlockHash": block_hash,
+        "onchainTimestamp": block.get("time") or block.get("timestamp"),
+        "onchainDifficulty": block.get("difficulty"),
+        "coinbaseRewardNative": None,
+        "niceHashPayoutRewardNative": payout_native_from_public_reward(event),
+        "payoutToCoinbasePercent": None,
+        "explorerMinerLabel": miner,
+        "coinbaseTagClass": (
+            "BCH_NINJA_NICEHASH_MINER_LABEL"
+            if nicehash_label
+            else "NOT_CHECKED_BCH_NINJA_HASH_ONLY"
+        ),
+    }
+
+
+
 def verify_zec(event, opener, now):
     result = common(event, now)
     height = int(event.get("blockHeight"))
@@ -337,12 +442,21 @@ def verify_event(event, opener=None, now=None):
             try:
                 primary = verify_mempool(event, opener, now)
             except Exception as primary_exc:
-                return verify_bch_blockchair(
-                    event,
-                    opener,
-                    now,
-                    primary_error=type(primary_exc).__name__,
-                )
+                try:
+                    return verify_bch_blockchair(
+                        event,
+                        opener,
+                        now,
+                        primary_error=type(primary_exc).__name__,
+                    )
+                except Exception as blockchair_exc:
+                    return verify_bch_ninja_hash(
+                        event,
+                        opener,
+                        now,
+                        primary_error=type(primary_exc).__name__,
+                        blockchair_error=type(blockchair_exc).__name__,
+                    )
             # A real primary hash conflict is evidence, not an availability
             # failure, so never hide it behind a fallback.
             return primary

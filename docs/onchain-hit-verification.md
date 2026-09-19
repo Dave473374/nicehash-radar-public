@@ -24,7 +24,7 @@ complete merged-mining proof.
    that archive for research and performs no HTTP requests.
 3. Independent chain evidence:
    - BTC: mempool.space
-   - BCH: bchexplorer.cash primary; Blockchair Bitcoin Cash dashboard fallback when the primary source is unavailable
+   - BCH: bchexplorer.cash primary; Blockchair Bitcoin Cash dashboard first fallback; explorer.bch.ninja public JSON block-by-height API as a second fallback
    - ZEC: Blockchair Zcash dashboard API
    - KAS: official Kaspa Explorer REST API (`api.kaspa.org`)
 
@@ -63,3 +63,13 @@ BCH value before comparing it with the on-chain reward. This prevents a
 303137009 raw payout from being misread as 303,137,009 BCH.
 
 A hash conflict from the primary source is never hidden by the fallback.
+
+
+### BCH second fallback
+
+If both the primary BCH explorer and Blockchair are unavailable, the verifier
+uses explorer.bch.ninja's public `/api/blocks-by-height/:height` JSON route.
+It requires exactly one block object with the requested height and a 64-character
+hash. Ambiguous responses fail closed. If the explorer also labels the miner as
+NiceHash, that label is stored as secondary evidence; it is not treated as a raw
+coinbase-script proof. A hash mismatch remains a hard conflict.
