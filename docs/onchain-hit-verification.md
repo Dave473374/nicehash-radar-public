@@ -9,10 +9,12 @@ changing CURRENT 2.9.0, BATCH, alerts, or any order behavior.
 - Silver → BCH
 - Bronze → ZEC
 - Titanium → KAS
+- Palladium → LTC + DOGE merged mining
 
-Palladium (LTC/DOGE merged mining) is intentionally deferred until the verifier
-can represent the two chains correctly rather than pretending one block/tag is a
-complete merged-mining proof.
+Palladium is represented per chain. A public LTC success event is verified
+against Litecoin and a public DOGE success event is verified against Dogecoin.
+A match on one chain is explicitly **not** treated as proof that the paired chain
+also produced a reward.
 
 ## Evidence layers
 
@@ -27,6 +29,8 @@ complete merged-mining proof.
    - BCH: bchexplorer.cash primary; Blockchair Bitcoin Cash dashboard first fallback; explorer.bch.ninja public JSON block-by-height API as a second fallback
    - ZEC: Blockchair Zcash dashboard API
    - KAS: official Kaspa Explorer REST API (`api.kaspa.org`)
+   - Palladium LTC/DOGE: Blockchair Litecoin/Dogecoin block dashboards, with
+     each event scoped to the chain named by the NiceHash public success record
 
 BTC and BCH on the primary mempool-style path additionally inspect the coinbase `scriptsig` and keep
 `/NiceHash/`, `/NiceHashMining/`, and `/NiceHashSolo/` distinct. A block
@@ -37,6 +41,17 @@ For ZEC phase 1, independent verification is block-height/hash plus explorer
 metadata (timestamp/difficulty/reward/miner label where available). For KAS,
 the official API verifies the exact block hash and records timestamp,
 difficulty, blue/DAA score and miner info when available.
+
+For Palladium, the ledger stores the merged-mining family, the event's chain,
+and whether that chain is the Litecoin parent Scrypt chain or Dogecoin AuxPoW
+child chain. The field `pairedChainEvidenceClaimed` remains false: verifying a
+DOGE block never manufactures an LTC HIT, and verifying an LTC block never
+manufactures a DOGE HIT. Public `singleReward.payoutReward` values for LTC and
+DOGE are normalized from 1e-8 native units before any payout/reward comparison.
+
+Previously stored Palladium events with status `UNSUPPORTED_COIN` are eligible
+for one-time re-verification now that LTC/DOGE are supported. Existing verified
+records are not reprocessed unnecessarily.
 
 ## Critical limitation
 
