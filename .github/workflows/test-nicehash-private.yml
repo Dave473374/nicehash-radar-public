@@ -94,6 +94,11 @@ jobs:
               for key, value in (matched.get('skipReasonsByPackageOutcome') or {}).items()
               if any(key.startswith(package + '|') for package in allowed)
           }
+          currency_mismatch = {
+              key: value
+              for key, value in (matched.get('currencyMismatchByPackageOutcome') or {}).items()
+              if any(key.startswith(package + '|') for package in allowed)
+          }
 
           def outcome(value):
               return 'HIT' if value is True else 'MISS' if value is False else 'UNKNOWN'
@@ -146,6 +151,7 @@ jobs:
               'radarMatchedOrdersByPackageOutcome': dict(sorted(matched_counts.items())),
               'radarSkipReasonsByPackage': dict(sorted(skip_by_package.items())),
               'radarSkipReasonsByPackageOutcome': dict(sorted(skip_by_package_outcome.items())),
+              'currencyMismatchByPackageOutcome': dict(sorted(currency_mismatch.items())),
               'marketContextOrdersByOutcome': orders,
               'coverageByOutcomeStatus': coverage,
               'byPackageHorizonOutcome': by_outcome,
