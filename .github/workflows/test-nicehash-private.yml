@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       print_redacted_palladium_summary:
-        description: 'PUBLIC LOG: print aggregate Palladium M HIT/MISS pre-entry features; no IDs, timestamps, amounts or ROI'
+        description: 'PUBLIC LOG: print aggregate Palladium S/M/L/Team counts + pre-entry features; no IDs, timestamps, amounts or ROI'
         required: true
         default: false
         type: boolean
@@ -69,41 +69,69 @@ jobs:
         run: python3 scripts/match_private_orders.py > /tmp/private-order-match.log
       - name: Join entries to public market edge context
         run: python3 scripts/match_private_orders_market_context.py
-      - name: Print redacted Palladium M aggregate only when explicitly requested
+      - name: Print redacted Palladium family aggregate only when explicitly requested
         if: ${{ inputs.print_redacted_palladium_summary == true }}
         shell: bash
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
+          raw = json.loads(Path('/tmp/nicehash-completed-orders.json').read_text(encoding='utf-8'))
+          matched = json.loads(Path('/tmp/private-order-matches.json').read_text(encoding='utf-8'))
           result = json.loads(Path('/tmp/private-order-market-context.json').read_text(encoding='utf-8'))
           summary = result.get('preEntryFeatureSummary') or {}
+          allowed = {'Palladium S', 'Palladium M', 'Palladium L', 'Team Palladium'}
+
+          def outcome(value):
+              return 'HIT' if value is True else 'MISS' if value is False else 'UNKNOWN'
+
+          collector = {}
+          for row in raw.get('list') or []:
+              package = row.get('packageName')
+              if package not in allowed:
+                  continue
+              key = f"{package}|{outcome(row.get('isReward'))}"
+              collector[key] = collector.get(key, 0) + 1
+
+          matched_counts = {}
+          for row in matched.get('matches') or []:
+              package = row.get('packageName')
+              if package not in allowed:
+                  continue
+              key = f"{package}|{row.get('outcome') or 'UNKNOWN'}"
+              matched_counts[key] = matched_counts.get(key, 0) + 1
+
+          def family_key(key):
+              return any(key.startswith(package + '|') for package in allowed)
+
           by_outcome = {
               key: value
               for key, value in (summary.get('byPackageHorizonOutcome') or {}).items()
-              if key.startswith('Palladium M|')
+              if family_key(key)
           }
           comparisons = {
               key: value
               for key, value in (summary.get('hitMinusMiss') or {}).items()
-              if key.startswith('Palladium M|')
+              if family_key(key)
           }
           coverage = {
               key: value
               for key, value in (summary.get('coverageByPackageOutcomeStatus') or {}).items()
-              if key.startswith('Palladium M|')
+              if family_key(key)
           }
           orders = {
               key: value
               for key, value in (summary.get('ordersByPackageOutcome') or {}).items()
-              if key.startswith('Palladium M|')
+              if family_key(key)
           }
           payload = {
-              'role': 'REDACTED_PRIVATE_PALLADIUM_M_AGGREGATE_PUBLIC_LOG',
+              'role': 'REDACTED_PRIVATE_PALLADIUM_FAMILY_AGGREGATE_PUBLIC_LOG',
               'containsOrderIds': False,
               'containsTimestamps': False,
               'containsAmountsOrRoi': False,
-              'ordersByOutcome': orders,
+              'collectorOrdersByPackageOutcome': dict(sorted(collector.items())),
+              'radarMatchedOrdersByPackageOutcome': dict(sorted(matched_counts.items())),
+              'marketContextOrdersByOutcome': orders,
               'coverageByOutcomeStatus': coverage,
               'byPackageHorizonOutcome': by_outcome,
               'hitMinusMiss': comparisons,
