@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-19T16:50:27.760585+00:00",
+  "role": "VERIFIED_HIT_MARKET_CONTEXT_RESEARCH_ONLY",
+  "currentProductionModelChanged": false,
+  "canRaiseSignal": false,
+  "automaticPurchase": false,
+  "automaticCancel": false,
+  "privateApiUsed": false,
+  "networkRequestsMade": 0,
+  "entryTimeEligible": false,
+  "canSupplyMissDenominator": false,
+  "verifiedHitCount": 88,
+  "freshExactMarketMatchCount": 27,
+  "marketContextStatusCounts": {
+    "MATCHED_FRESH_EXACT_PACKAGE": 27,
+    "EXACT_PACKAGE_QUOTE_NO_VALID_MARKET_PAIR": 38,
+    "NO_EXACT_PACKAGE_SERIES": 23
+  },
+  "signalAtFreshHitContextCounts": {
+    "WAIT": 26,
+    "GOOD": 1
+  },
+  "lagContextCounts": {},
+  "byCoin": {
+    "BCH": {
+      "verifiedHits": 4
+    },
+    "DOGE": {
+      "verifiedHits": 5,
+      "freshExactMarketMatches": 3
+    },
+    "KAS": {
+      "verifiedHits": 77,
+      "freshExactMarketMatches": 24
+    },
+    "ZEC": {
+      "verifiedHits": 2
+    }
+  },
+  "byPackage": {
+    "Bronze L": {
+      "verifiedHits": 2
+    },
+    "Palladium L": {
+      "verifiedHits": 1
+    },
+    "Palladium M": {
+      "verifiedHits": 3,
+      "freshExactMarketMatches": 3
+    },
+    "Silver M": {
+      "verifiedHits": 2
+    },
+    "Team Palladium": {
+      "verifiedHits": 1
+    },
+    "Team Silver": {
+      "verifiedHits": 2
+    },
+    "Titanium L": {
+      "verifiedHits": 17
+    },
+    "Titanium M": {
+      "verifiedHits": 31,
+      "freshExactMarketMatches": 16
+    },
+    "Titanium S": {
+      "verifiedHits": 29,
+      "freshExactMarketMatches": 8
+    }
+  },
+  "settings": {
+    "maxExactPackageContextAgeSeconds": 900,
+    "recentLagEpisodeLookbackMinutes": 60,
+    "exactPackageOnly": true,
+    "eventCoinMayMatchPrimaryOrMergeCoin": true,
+    "quoteAndObservationMustPrecedeHit": true
+  },
+  "verdict": "DESCRIPTIVE_SUCCESS_CONTEXT_ONLY_NO_VERIFIED_INCREMENTAL_EDGE",
+  "limitations": [
+    "Every on-chain input row is a success event; this report has no MISS denominator and cannot estimate hit rate.",
+    "The matched quote is reward-time context, not the ticket purchase/entry state.",
+    "A HIT near a lag episode does not establish causality, profitability, or a useful predictor.",
+    "Package names are matched exactly; M/L/Team/S are never substituted for one another.",
+    "Only quotes already observed before the block are eligible; future observations are excluded.",
+    "A market PAIR is a relative public statistic, not a verified executable EasyMining purchase price."
+  ],
+  "counts": {
+    "NO_EXACT_PACKAGE_SERIES": 23,
+    "EXACT_PACKAGE_QUOTE_NO_VALID_MARKET_PAIR": 38,
+    "MATCHED_FRESH_EXACT_PACKAGE": 27
+  },
+  "inputReadWarnings": {},
+  "inputSha256": {
+    "research/onchain-hit-verification.jsonl": "2215aaf28911982d5b1771e21bf27effffc47a4e37cb5cfc0585a32c367190b2",
+    "research/market-edge-pairs.jsonl": "4e3a3f01074d55aea7137c15dbea320bf9152756b79adb10ebb4492b0f0a05a2",
+    "research/lag-episodes.jsonl": "03a94545ef8eb7eb263dee8067f25e4a33c80f041bdeba492d52293bc562bb8d"
+  }
+}
