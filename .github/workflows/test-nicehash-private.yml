@@ -17,6 +17,7 @@ on:
       - scripts/match_private_orders.py
       - scripts/match_private_orders_market_context.py
       - tests/test_private_order_market_context.py
+      - tests/test_private_order_match_diagnostics.py
       - .github/workflows/test-nicehash-private.yml
 
 permissions:
@@ -37,7 +38,9 @@ jobs:
       - name: Enforce private API read-only policy
         run: python3 scripts/check_private_api_policy.py
       - name: Test private entry market-context logic without credentials
-        run: python3 -m unittest tests.test_private_order_market_context -v
+        run: |
+          python3 -m unittest tests.test_private_order_market_context -v
+          python3 -m unittest tests.test_private_order_match_diagnostics -v
 
   private:
     needs: offline
@@ -79,6 +82,11 @@ jobs:
           raw = json.loads(Path('/tmp/nicehash-completed-orders.json').read_text(encoding='utf-8'))
           matched = json.loads(Path('/tmp/private-order-matches.json').read_text(encoding='utf-8'))
           result = json.loads(Path('/tmp/private-order-market-context.json').read_text(encoding='utf-8'))
+          skip_by_package = {
+              key: value
+              for key, value in (matched.get('skipReasonsByPackage') or {}).items()
+              if any(key.startswith(package + '|') for package in allowed)
+          }
           summary = result.get('preEntryFeatureSummary') or {}
           allowed = {'Palladium S', 'Palladium M', 'Palladium L', 'Team Palladium'}
 
@@ -131,6 +139,7 @@ jobs:
               'containsAmountsOrRoi': False,
               'collectorOrdersByPackageOutcome': dict(sorted(collector.items())),
               'radarMatchedOrdersByPackageOutcome': dict(sorted(matched_counts.items())),
+              'radarSkipReasonsByPackage': dict(sorted(skip_by_package.items())),
               'marketContextOrdersByOutcome': orders,
               'coverageByOutcomeStatus': coverage,
               'byPackageHorizonOutcome': by_outcome,
