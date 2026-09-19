@@ -151,7 +151,12 @@ def get_completed_easymining_orders(page=0, limit=100):
         HOST + path + "?" + query,
         headers=headers,
         timeout=30,
+        allow_redirects=False,
     )
+    if 300 <= response.status_code < 400:
+        raise PrivateApiPolicyError(
+            "Redirects are forbidden for signed private API requests"
+        )
     response.raise_for_status()
 
     payload = response.json()
@@ -190,7 +195,12 @@ def get_shared_easymining_orders(
         HOST + path + "?" + query,
         headers=headers,
         timeout=30,
+        allow_redirects=False,
     )
+    if 300 <= response.status_code < 400:
+        raise PrivateApiPolicyError(
+            "Redirects are forbidden for signed private API requests"
+        )
     response.raise_for_status()
 
     payload = response.json()
