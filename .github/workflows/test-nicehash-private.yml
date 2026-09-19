@@ -2,6 +2,12 @@ name: Test NiceHash Private API
 
 on:
   workflow_dispatch:
+    inputs:
+      print_redacted_palladium_summary:
+        description: 'PUBLIC LOG: print aggregate Palladium M HIT/MISS pre-entry features; no IDs, timestamps, amounts or ROI'
+        required: true
+        default: false
+        type: boolean
   pull_request:
     branches: [main]
     paths:
@@ -63,6 +69,36 @@ jobs:
         run: python3 scripts/match_private_orders.py > /tmp/private-order-match.log
       - name: Join entries to public market edge context
         run: python3 scripts/match_private_orders_market_context.py
+      - name: Print redacted Palladium M aggregate only when explicitly requested
+        if: ${{ inputs.print_redacted_palladium_summary == true }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('/tmp/private-order-market-context.json').read_text(encoding='utf-8'))
+          summary = result.get('preEntryFeatureSummary') or {}
+          by_outcome = {
+              key: value
+              for key, value in (summary.get('byPackageHorizonOutcome') or {}).items()
+              if key.startswith('Palladium M|')
+          }
+          comparisons = {
+              key: value
+              for key, value in (summary.get('hitMinusMiss') or {}).items()
+              if key.startswith('Palladium M|')
+          }
+          payload = {
+              'role': 'REDACTED_PRIVATE_PALLADIUM_M_AGGREGATE_PUBLIC_LOG',
+              'containsOrderIds': False,
+              'containsTimestamps': False,
+              'containsAmountsOrRoi': False,
+              'byPackageHorizonOutcome': by_outcome,
+              'hitMinusMiss': comparisons,
+              'canRaiseSignal': False,
+          }
+          print(json.dumps(payload, indent=2, allow_nan=False))
+          PY
       - name: Validate ephemeral outputs without printing private results
         shell: bash
         run: |
