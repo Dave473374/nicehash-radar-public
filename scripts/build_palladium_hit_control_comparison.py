@@ -22,7 +22,6 @@ from build_verified_hit_market_context import (  # noqa: E402
     build_pre_hit_context,
     finite_number,
     parse_time,
-    same_pair_series,
 )
 
 DEFAULT_HITS = Path("research/verified-hit-market-context.jsonl")
@@ -67,14 +66,24 @@ def hit_series_stub(hit: dict) -> dict:
     market = hit.get("marketContext") if isinstance(hit.get("marketContext"), dict) else {}
     return {
         "package": hit.get("packageName"),
-        "size": market.get("size"),
         "currency": market.get("currency"),
         "coin": market.get("primaryCoin"),
         "mergeCoin": market.get("mergeCoin"),
         "marketAlgorithm": market.get("marketAlgorithm"),
         "relayVersion": market.get("relayVersion"),
-        "marketUnitSignature": market.get("marketUnitSignature"),
     }
+
+
+def same_control_series(pair: dict, stub: dict) -> bool:
+    keys = (
+        "package",
+        "currency",
+        "coin",
+        "mergeCoin",
+        "marketAlgorithm",
+        "relayVersion",
+    )
+    return all(pair.get(key) == stub.get(key) for key in keys)
 
 
 def hit_rows(rows: list[dict]) -> list[dict]:
@@ -124,7 +133,7 @@ def event_in_exclusion(event_at, hits: list[dict], duration_seconds: float) -> b
 
 def matched_controls_for_hit(hit: dict, pairs: list[dict], all_hits: list[dict]) -> list[dict]:
     stub = hit_series_stub(hit)
-    same = [row for row in pairs if same_pair_series(row, stub)]
+    same = [row for row in pairs if same_control_series(row, stub)]
     if not same:
         return []
 
