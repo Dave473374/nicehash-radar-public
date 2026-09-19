@@ -1,7 +1,8 @@
 import json
+import os
 from pathlib import Path
 
-BUY_FEED = Path("buy-feed.json")
+BUY_FEED = Path(os.getenv("BUY_RADAR_FEED", "buy-feed.json"))
 
 TWO32 = float(2 ** 32)
 SUPPORTED_ALGORITHMS = {
