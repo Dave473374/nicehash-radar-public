@@ -1,10 +1,26 @@
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-PRIVATE_ORDERS = Path("/tmp/nicehash-completed-orders.json")
-RADAR_HISTORY = Path("calibration/radar-snapshots.jsonl")
-OUTPUT = Path("/tmp/private-order-matches.json")
+PRIVATE_ORDERS = Path(
+    os.getenv(
+        "PRIVATE_ORDERS_PATH",
+        "/tmp/nicehash-completed-orders.json",
+    )
+)
+RADAR_HISTORY = Path(
+    os.getenv(
+        "RADAR_HISTORY_PATH",
+        "calibration/radar-snapshots.jsonl",
+    )
+)
+OUTPUT = Path(
+    os.getenv(
+        "PRIVATE_MATCH_OUTPUT",
+        "/tmp/private-order-matches.json",
+    )
+)
 
 # Entry calibration must use data that was actually fresh at order time.
 MAX_ENTRY_SNAPSHOT_AGE_SECONDS = 15 * 60
