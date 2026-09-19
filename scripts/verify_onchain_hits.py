@@ -21,9 +21,11 @@ MAX_RESPONSE_BYTES = 4_000_000
 MEMPOOL_BASES = {"BTC": "https://mempool.space", "BCH": "https://bchexplorer.cash"}
 BLOCKCHAIR_BASE = "https://api.blockchair.com"
 BCH_NINJA_BASE = "https://explorer.bch.ninja"
+ORDNET_BASE = "https://api.ordnet.io/v1"
 ZEC_BASE = BLOCKCHAIR_BASE
 KAS_BASE = "https://api.kaspa.org"
 BLOCKCHAIR_CHAIN_SLUGS = {"LTC": "litecoin", "DOGE": "dogecoin"}
+ORDNET_CHAIN_SLUGS = {"LTC": "ltc", "DOGE": "doge"}
 SUPPORTED = {"BTC", "BCH", "ZEC", "KAS", "LTC", "DOGE"}
 KNOWN_TAGS = (
     (b"/NiceHashMining/", "NICEHASH_MINING_TAG"),
@@ -46,7 +48,7 @@ def finite(value):
 
 
 def get(opener, base, path, json_expected=True):
-    if base not in set(MEMPOOL_BASES.values()) | {BLOCKCHAIR_BASE, BCH_NINJA_BASE, KAS_BASE}:
+    if base not in set(MEMPOOL_BASES.values()) | {BLOCKCHAIR_BASE, BCH_NINJA_BASE, KAS_BASE, ORDNET_BASE}:
         raise ValueError("Explorer host not allowlisted")
     if not path.startswith("/"):
         raise ValueError("Explorer path invalid")
@@ -267,8 +269,8 @@ def verify_bch_blockchair(event, opener, now, primary_error=None):
     }
 
 
-def _bch_ninja_block(payload, height):
-    """Find exactly one height/hash block object in the public BCH Ninja JSON."""
+def _unique_height_hash_record(payload, height, source_name):
+    """Find exactly one recursive height/hash block object in public JSON."""
     matches = []
 
     def walk(value, depth=0):
@@ -302,9 +304,13 @@ def _bch_ninja_block(payload, height):
         block_hash = str(item.get("hash") or item.get("blockHash") or "").lower().strip()
         unique.setdefault(block_hash, item)
     if len(unique) != 1:
-        raise ValueError("BCH Ninja response did not contain exactly one matching height/hash")
+        raise ValueError(f"{source_name} response did not contain exactly one matching height/hash")
     block_hash, item = next(iter(unique.items()))
     return block_hash, item
+
+
+def _bch_ninja_block(payload, height):
+    return _unique_height_hash_record(payload, height, "BCH Ninja")
 
 
 def verify_bch_ninja_hash(event, opener, now, primary_error=None, blockchair_error=None):
@@ -452,6 +458,56 @@ def verify_palladium_chain(event, opener, now):
     }
 
 
+def verify_palladium_ordnet_hash(event, opener, now, primary_error=None):
+    """Keyless hash-only fallback for a reported LTC/DOGE Palladium event."""
+    coin = str(event.get("coin") or "").upper()
+    if coin not in ORDNET_CHAIN_SLUGS:
+        raise ValueError("Unsupported Palladium ORDnet chain")
+    result = common(event, now)
+    height = int(event.get("blockHeight"))
+    slug = ORDNET_CHAIN_SLUGS[coin]
+    payload = get(opener, ORDNET_BASE, f"/{slug}/block/height/{height}")
+    block_hash, block = _unique_height_hash_record(payload, height, "ORDnet")
+    expected = str(event.get("blockHash") or "").lower().strip()
+    chain_role = "AUXPOW_CHILD_CHAIN" if coin == "DOGE" else "PARENT_SCRYPT_CHAIN"
+    if len(expected) == 64 and expected != block_hash:
+        return {
+            **result,
+            "schemaVersion": 3,
+            "status": "CONFLICT_BLOCK_HASH",
+            "explorer": ORDNET_BASE,
+            "fallbackFrom": BLOCKCHAIR_BASE,
+            "primaryErrorType": primary_error,
+            "onchainBlockHash": block_hash,
+            "mergedMiningFamily": "Palladium",
+            "mergedMiningChain": coin,
+            "mergedMiningChainRole": chain_role,
+            "mergedMiningEvidenceScope": "THIS_CHAIN_EVENT_ONLY",
+            "pairedChainEvidenceClaimed": False,
+        }
+    return {
+        **result,
+        "schemaVersion": 3,
+        "status": "VERIFIED_ON_CHAIN_BLOCK_MATCH",
+        "verificationStrength": "BLOCK_HEIGHT_HASH_KEYLESS_NODE_FALLBACK",
+        "explorer": ORDNET_BASE,
+        "fallbackFrom": BLOCKCHAIR_BASE,
+        "primaryErrorType": primary_error,
+        "onchainBlockHash": block_hash,
+        "onchainTimestamp": block.get("time") or block.get("timestamp"),
+        "onchainDifficulty": block.get("difficulty"),
+        "coinbaseRewardNative": None,
+        "niceHashPayoutRewardNative": payout_native_from_public_reward(event),
+        "payoutToCoinbasePercent": None,
+        "coinbaseTagClass": "NOT_CHECKED_PALLADIUM_ORDNET_HASH_ONLY",
+        "mergedMiningFamily": "Palladium",
+        "mergedMiningChain": coin,
+        "mergedMiningChainRole": chain_role,
+        "mergedMiningEvidenceScope": "THIS_CHAIN_EVENT_ONLY",
+        "pairedChainEvidenceClaimed": False,
+    }
+
+
 def verify_zec(event, opener, now):
     result = common(event, now)
     height = int(event.get("blockHeight"))
@@ -545,7 +601,16 @@ def verify_event(event, opener=None, now=None):
         if coin == "BTC":
             return verify_mempool(event, opener, now)
         if coin in {"LTC", "DOGE"}:
-            return verify_palladium_chain(event, opener, now)
+            try:
+                primary = verify_palladium_chain(event, opener, now)
+            except Exception as primary_exc:
+                return verify_palladium_ordnet_hash(
+                    event,
+                    opener,
+                    now,
+                    primary_error=type(primary_exc).__name__,
+                )
+            return primary
         if coin == "ZEC":
             return verify_zec(event, opener, now)
         if coin == "KAS":
