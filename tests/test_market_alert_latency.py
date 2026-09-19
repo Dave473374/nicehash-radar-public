@@ -144,7 +144,7 @@ class AlertLatencyTests(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "s.jsonl"
-            p.write_text("".join(json.dumps(row) + "\\n" for row in rows))
+            p.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
             loaded, counts = m.load_snapshots(p, T + timedelta(minutes=2))
         self.assertEqual(loaded, [])
         self.assertEqual(counts["conflictingSnapshot"], 1)
