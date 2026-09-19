@@ -166,15 +166,30 @@ def find_match(order):
     if not package_name or not order_coin or not order_currency:
         return None, "MISSING_MATCH_KEY"
 
-    candidates = [
+    past = [
         (ts, snapshot)
         for ts, snapshot in snapshot_points
         if ts <= order_start
-        and (order_start - ts).total_seconds()
+    ]
+    if not past:
+        if snapshot_points and snapshot_points[0][0] > order_start:
+            return None, "ORDER_PREDATES_RADAR_HISTORY"
+        return None, "NO_RADAR_HISTORY_BEFORE_ENTRY"
+
+    latest_past_ts = past[-1][0]
+    if (order_start - latest_past_ts).total_seconds() > MAX_ENTRY_SNAPSHOT_AGE_SECONDS:
+        return None, "NO_FRESH_RADAR_SNAPSHOT"
+
+    candidates = [
+        (ts, snapshot)
+        for ts, snapshot in past
+        if (order_start - ts).total_seconds()
         <= MAX_ENTRY_SNAPSHOT_AGE_SECONDS
     ]
     candidates.sort(key=lambda item: item[0], reverse=True)
 
+    saw_package_name = False
+    saw_package_coin = False
     for ts, snapshot in candidates:
         for package in (snapshot.get("feed", {}).get("packages") or []):
             package_coin = (package.get("primary_chain") or {}).get("currency")
@@ -184,8 +199,10 @@ def find_match(order):
 
             if package.get("name") != package_name:
                 continue
+            saw_package_name = True
             if package_coin != order_coin:
                 continue
+            saw_package_coin = True
             if package_currency != order_currency:
                 continue
 
@@ -252,12 +269,17 @@ def find_match(order):
                 ).get("expected_blocks_per_btc_vs_7d_percent"),
             }, "MATCHED"
 
-    return None, "NO_FRESH_RADAR_MATCH"
+    if not saw_package_name:
+        return None, "FRESH_RADAR_NO_EXACT_PACKAGE"
+    if not saw_package_coin:
+        return None, "FRESH_RADAR_PRIMARY_COIN_MISMATCH"
+    return None, "FRESH_RADAR_CURRENCY_MISMATCH"
 
 
 matches = []
 skip_reasons = {}
 skip_reasons_by_package = {}
+skip_reasons_by_package_outcome = {}
 
 for order in orders:
     match, reason = find_match(order)
@@ -267,6 +289,10 @@ for order in orders:
         package_key = f"{package_name}|{reason}"
         skip_reasons_by_package[package_key] = (
             skip_reasons_by_package.get(package_key, 0) + 1
+        )
+        outcome_key = f"{package_name}|{order_outcome(order)}|{reason}"
+        skip_reasons_by_package_outcome[outcome_key] = (
+            skip_reasons_by_package_outcome.get(outcome_key, 0) + 1
         )
         continue
 
@@ -372,6 +398,7 @@ result = {
     "unknownOutcomes": overall["unknownOutcomes"],
     "skipReasons": skip_reasons,
     "skipReasonsByPackage": skip_reasons_by_package,
+    "skipReasonsByPackageOutcome": skip_reasons_by_package_outcome,
     "overall": overall,
     "signalStats": signal_stats,
     "matches": matches,
