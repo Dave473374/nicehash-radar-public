@@ -298,7 +298,7 @@ class OnchainTests(unittest.TestCase):
     def test_build_never_supplies_miss_denominator(self):
         with tempfile.TemporaryDirectory() as d:
             inp=Path(d)/"in.jsonl"; led=Path(d)/"led.jsonl"; rep=Path(d)/"rep.json"
-            inp.write_text(json.dumps(ev("DOGE"))+"\n")
+            inp.write_text(json.dumps(ev("RVN"))+"\n")
             report=m.build(inp,led,rep,20,verifier=lambda e,now=None:m.verify_event(e,now=now),now="2026-09-19T00:00:00+00:00")
             self.assertFalse(report["canSupplyMissDenominator"])
             self.assertFalse(report["canRaiseBuySignal"])
