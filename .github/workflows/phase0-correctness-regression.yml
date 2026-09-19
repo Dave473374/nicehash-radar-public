@@ -16,6 +16,7 @@ on:
       - "scripts/nicehash_private_readonly.py"
       - "scripts/collect_shared_packages.py"
       - "scripts/build_evidence_scorecard.py"
+      - "scripts/build_calibration_report.py"
       - "scripts/test_phase0_correctness.py"
       - ".github/workflows/phase0-correctness-regression.yml"
       - ".github/workflows/update-buy-feed.yml"
@@ -45,7 +46,11 @@ jobs:
             scripts/nicehash_private_readonly.py \
             scripts/collect_shared_packages.py \
             scripts/build_evidence_scorecard.py \
+            scripts/build_calibration_report.py \
             scripts/test_phase0_correctness.py
+
+      - name: Smoke-test calibration report build
+        run: python3 scripts/build_calibration_report.py > /tmp/calibration-report-smoke.log
 
       - name: Run Phase 0 regression scenarios
         run: python3 scripts/test_phase0_correctness.py
