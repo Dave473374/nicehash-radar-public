@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "candidateId": "PALLADIUM_S_60M_MOMENTUM_V1",
+  "status": "FROZEN_PROSPECTIVE_CANDIDATE",
+  "lockedAt": "2026-09-19T18:49:00Z",
+  "validationStart": "2026-09-20T00:00:00Z",
+  "package": "Palladium S",
+  "currencyMarket": "BTC",
+  "primaryCoin": "LTC",
+  "mergeCoin": "DOGE",
+  "featureSource": "CAUSAL_GIT_BUY_FEED_PRE_ENTRY",
+  "endpointMaxAgeMinutes": 15,
+  "horizonMinutes": 60,
+  "baselineToleranceMinutes": 20,
+  "sameRelayRequired": true,
+  "causalGuards": {
+    "gitCommitMustPrecedeOrderEntry": true,
+    "feedCheckedAtMustPrecedeOrderEntry": true,
+    "baselineMustBeAtOrBeforeTarget": true,
+    "exactPackageCoinCurrencyRequired": true,
+    "sameRelayWithinWindowRequired": true,
+    "legacy282BtcOnlySchemaBridgeAllowed": true
+  },
+  "coreMomentumRules": {
+    "packageWorkChangePercent": {
+      "operator": "GT",
+      "value": 0.0
+    },
+    "expectedReturnChangePercentagePoints": {
+      "operator": "GT",
+      "value": 0.0
+    },
+    "qualityVs24hChangePercentagePoints": {
+      "operator": "GT",
+      "value": 0.0
+    },
+    "qualityVs7dChangePercentagePoints": {
+      "operator": "GT",
+      "value": 0.0
+    }
+  },
+  "classification": {
+    "CORE_MATCH": {
+      "minimumCoreRulesPassed": 4,
+      "maximumCoreRulesPassed": 4
+    },
+    "PARTIAL_3_OF_4": {
+      "minimumCoreRulesPassed": 3,
+      "maximumCoreRulesPassed": 3
+    },
+    "NO_MATCH": {
+      "minimumCoreRulesPassed": 0,
+      "maximumCoreRulesPassed": 2
+    }
+  },
+  "supportingContextFeatures": [
+    "mergeDifficultyChangePercent",
+    "mergeModelHitProbabilityChangePercentagePoints",
+    "primaryModelHitProbabilityChangePercentagePoints"
+  ],
+  "prospectiveEvaluation": {
+    "eligibleOutcomes": [
+      "HIT",
+      "MISS"
+    ],
+    "primaryComparison": "CORE_MATCH_VS_NOT_CORE_MATCH",
+    "minimumEligibleOrdersBeforeAnyPerformanceClaim": 30,
+    "minimumHitsBeforeAnyPerformanceClaim": 3,
+    "reportBeforeGate": "COUNTS_ONLY_EXPLORATORY"
+  },
+  "registrationEvidence": {
+    "sourceCutoff": "2026-09-19T18:47:58Z",
+    "privatePalladiumSCompletedOrders": 7,
+    "privatePalladiumSHits": 1,
+    "privatePalladiumSMisses": 6,
+    "sameRelay282FreshEndpointHits": 1,
+    "sameRelay282FreshEndpointMisses": 3,
+    "sameRelay282Sensitivity60m20mToleranceHits": 1,
+    "sameRelay282Sensitivity60m20mToleranceMisses": 2,
+    "note": "Registration evidence explains hypothesis origin only and is excluded from prospective validation."
+  },
+  "automaticActions": false,
+  "canRaiseSignal": false,
+  "currentProductionModelChanged": false
+}
