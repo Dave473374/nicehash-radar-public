@@ -88,11 +88,23 @@ jobs:
               for key, value in (summary.get('hitMinusMiss') or {}).items()
               if key.startswith('Palladium M|')
           }
+          coverage = {
+              key: value
+              for key, value in (summary.get('coverageByPackageOutcomeStatus') or {}).items()
+              if key.startswith('Palladium M|')
+          }
+          orders = {
+              key: value
+              for key, value in (summary.get('ordersByPackageOutcome') or {}).items()
+              if key.startswith('Palladium M|')
+          }
           payload = {
               'role': 'REDACTED_PRIVATE_PALLADIUM_M_AGGREGATE_PUBLIC_LOG',
               'containsOrderIds': False,
               'containsTimestamps': False,
               'containsAmountsOrRoi': False,
+              'ordersByOutcome': orders,
+              'coverageByOutcomeStatus': coverage,
               'byPackageHorizonOutcome': by_outcome,
               'hitMinusMiss': comparisons,
               'canRaiseSignal': False,
