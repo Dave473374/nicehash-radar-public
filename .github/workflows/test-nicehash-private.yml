@@ -16,7 +16,9 @@ on:
       - scripts/test_order_variants.py
       - scripts/match_private_orders.py
       - scripts/match_private_orders_market_context.py
+      - scripts/match_private_orders_radar_context.py
       - tests/test_private_order_market_context.py
+      - tests/test_private_order_radar_context.py
       - tests/test_private_order_match_diagnostics.py
       - .github/workflows/test-nicehash-private.yml
 
@@ -40,6 +42,7 @@ jobs:
       - name: Test private entry market-context logic without credentials
         run: |
           python3 -m unittest tests.test_private_order_market_context -v
+          python3 -m unittest tests.test_private_order_radar_context -v
           python3 -m unittest tests.test_private_order_match_diagnostics -v
 
   private:
@@ -70,6 +73,8 @@ jobs:
         run: python3 scripts/test_order_variants.py
       - name: Build entry-time HIT MISS ROI calibration without logging metrics
         run: python3 scripts/match_private_orders.py > /tmp/private-order-match.log
+      - name: Build Radar-only pre-entry context
+        run: python3 scripts/match_private_orders_radar_context.py
       - name: Join entries to public market edge context
         run: python3 scripts/match_private_orders_market_context.py
       - name: Print redacted Palladium family aggregate only when explicitly requested
@@ -82,7 +87,9 @@ jobs:
           raw = json.loads(Path('/tmp/nicehash-completed-orders.json').read_text(encoding='utf-8'))
           matched = json.loads(Path('/tmp/private-order-matches.json').read_text(encoding='utf-8'))
           result = json.loads(Path('/tmp/private-order-market-context.json').read_text(encoding='utf-8'))
+          radar_only = json.loads(Path('/tmp/private-order-radar-preentry.json').read_text(encoding='utf-8'))
           summary = result.get('preEntryFeatureSummary') or {}
+          radar_summary = radar_only.get('summary') or {}
           allowed = {'Palladium S', 'Palladium M', 'Palladium L', 'Team Palladium'}
           skip_by_package = {
               key: value
@@ -122,6 +129,27 @@ jobs:
           def family_key(key):
               return any(key.startswith(package + '|') for package in allowed)
 
+          radar_only_orders = {
+              key: value
+              for key, value in (radar_summary.get('ordersByPackageOutcome') or {}).items()
+              if family_key(key)
+          }
+          radar_only_age_buckets = {
+              key: value
+              for key, value in (radar_summary.get('endpointAgeBucketsByPackageOutcome') or {}).items()
+              if family_key(key)
+          }
+          radar_only_windows = {
+              key: value
+              for key, value in (radar_summary.get('byPackageHorizonOutcome') or {}).items()
+              if family_key(key)
+          }
+          radar_only_comparisons = {
+              key: value
+              for key, value in (radar_summary.get('hitMinusMiss') or {}).items()
+              if family_key(key)
+          }
+
           by_outcome = {
               key: value
               for key, value in (summary.get('byPackageHorizonOutcome') or {}).items()
@@ -152,6 +180,10 @@ jobs:
               'radarSkipReasonsByPackage': dict(sorted(skip_by_package.items())),
               'radarSkipReasonsByPackageOutcome': dict(sorted(skip_by_package_outcome.items())),
               'currencyMismatchByPackageOutcome': dict(sorted(currency_mismatch.items())),
+              'radarOnlyOrdersByOutcome': dict(sorted(radar_only_orders.items())),
+              'radarOnlyEndpointAgeBuckets': dict(sorted(radar_only_age_buckets.items())),
+              'radarOnlyByPackageHorizonOutcome': dict(sorted(radar_only_windows.items())),
+              'radarOnlyHitMinusMiss': dict(sorted(radar_only_comparisons.items())),
               'marketContextOrdersByOutcome': orders,
               'coverageByOutcomeStatus': coverage,
               'byPackageHorizonOutcome': by_outcome,
@@ -169,6 +201,7 @@ jobs:
           for path in (
               Path('/tmp/nicehash-completed-orders.json'),
               Path('/tmp/private-order-matches.json'),
+              Path('/tmp/private-order-radar-preentry.json'),
               Path('/tmp/private-order-market-context.json'),
           ):
               value = json.loads(path.read_text(encoding='utf-8'))
@@ -182,5 +215,6 @@ jobs:
         run: |
           rm -f /tmp/nicehash-completed-orders.json
           rm -f /tmp/private-order-matches.json
+          rm -f /tmp/private-order-radar-preentry.json
           rm -f /tmp/private-order-market-context.json
           rm -f /tmp/private-order-match.log
