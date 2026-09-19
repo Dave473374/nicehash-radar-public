@@ -390,6 +390,51 @@ class PrivateEntryMarketContextTests(unittest.TestCase):
         self.assertLess(comp["hitMinusMissMergeDifficultyChangePercent"], 0)
         self.assertFalse(summary["canRaiseSignal"])
 
+    def test_pre_entry_coverage_reports_order_before_public_history(self):
+        old_match = private_match(
+            package="Palladium M",
+            start="2026-09-18T00:10:00+00:00",
+            snapshot="2026-09-18T00:05:00+00:00",
+            outcome="MISS",
+        )
+        recent_pair = pair(
+            package="Palladium M",
+            quote="2026-09-19T23:40:00+00:00",
+            observed="2026-09-19T23:40:01+00:00",
+        )
+        result = self.build([old_match], [recent_pair])
+        row = result["matches"][0]
+        self.assertEqual(
+            row["entryPreCoverageStatus"],
+            "ORDER_PREDATES_PUBLIC_PAIR_HISTORY",
+        )
+        summary = result["preEntryFeatureSummary"]
+        self.assertEqual(summary["ordersByPackageOutcome"]["Palladium M|MISS"], 1)
+        self.assertEqual(
+            summary["coverageByPackageOutcomeStatus"]["Palladium M|MISS|ORDER_PREDATES_PUBLIC_PAIR_HISTORY"],
+            1,
+        )
+
+    def test_pre_entry_coverage_reports_available_windows(self):
+        match = private_match(package="Palladium M")
+        rows = [
+            pair(
+                package="Palladium M",
+                quote="2026-09-19T23:40:00+00:00",
+                observed="2026-09-19T23:40:01+00:00",
+            ),
+            pair(
+                package="Palladium M",
+                quote="2026-09-20T00:05:00+00:00",
+                observed="2026-09-20T00:05:01+00:00",
+            ),
+        ]
+        result = self.build([match], rows)
+        self.assertEqual(
+            result["matches"][0]["entryPreCoverageStatus"],
+            "PRE_ENTRY_WINDOWS_AVAILABLE",
+        )
+
     def test_output_policy_is_non_production_and_ephemeral(self):
         result = self.build([private_match()], [pair()])
         self.assertFalse(result["privateDataPersistedToRepository"])
