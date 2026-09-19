@@ -108,6 +108,32 @@ jobs:
           git_coverage = json.loads(Path('/tmp/private-order-git-feed-coverage.json').read_text(encoding='utf-8'))
           git_context = json.loads(Path('/tmp/private-order-git-feed-context.json').read_text(encoding='utf-8'))
           prospective = json.loads(Path('/tmp/private-prospective-candidate-v1.json').read_text(encoding='utf-8'))
+          prospective_public = {
+              key: prospective.get(key)
+              for key in (
+                  'role',
+                  'candidateId',
+                  'candidateHash',
+                  'status',
+                  'registrationEvidenceExcluded',
+                  'postValidationScopeOrdersSeen',
+                  'eligibleOrders',
+                  'eligibleHits',
+                  'eligibleMisses',
+                  'classificationCounts',
+                  'classificationOutcomeCounts',
+                  'primaryComparisonCounts',
+                  'ineligibleReasons',
+                  'performanceGate',
+                  'containsOrderIds',
+                  'containsPrivateOrderTimestamps',
+                  'containsAmountsOrRoi',
+                  'automaticActions',
+                  'canRaiseSignal',
+                  'currentProductionModelChanged',
+                  'verdict',
+              )
+          }
           summary = result.get('preEntryFeatureSummary') or {}
           git_context_summary = git_context.get('summary') or {}
           radar_summary = radar_only.get('summary') or {}
@@ -301,7 +327,7 @@ jobs:
               'gitFeedEndpointHitMinusMissByRelay': dict(sorted(git_endpoint_comparisons_by_relay.items())),
               'gitFeedByRelayPackageHorizonOutcome': dict(sorted(git_window_by_relay.items())),
               'gitFeedHitMinusMissByRelay': dict(sorted(git_window_comparisons_by_relay.items())),
-              'frozenProspectiveCandidateV1': prospective,
+              'frozenProspectiveCandidateV1': prospective_public,
               'gitFeedBaselineToleranceSensitivity': {
                   'role': git_sensitivity.get('role'),
                   'primaryToleranceMinutes': git_sensitivity.get('primaryToleranceMinutes'),
