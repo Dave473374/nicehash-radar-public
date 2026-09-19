@@ -241,6 +241,7 @@ def batch_assessment(package, now, feed):
     profitability = package.get("profitability") or {}
     history = package.get("history_trend") or {}
     edge = package.get("edge_shadow") or {}
+    math_shadow = package.get("math_consistency_shadow") or {}
 
     signal = str(package.get("final_signal") or "UNKNOWN")
     priority = purchase_priority(package)
@@ -273,6 +274,9 @@ def batch_assessment(package, now, feed):
         "marketReady": market.get("status") == "READY",
         "freshData": freshness.get("status") == "FRESH",
         "uniqueFeedSnapshot": feed_snapshot_id(feed) is not None,
+        "mathConsistency": (
+            math_shadow.get("status") in {"PASS", "NOT_APPLICABLE"}
+        ),
     }
 
     return {
@@ -299,6 +303,7 @@ def package_alert_payload(package, previous_signal, now, feed):
     primary = package.get("primary_chain") or {}
     nicehash_odds = package.get("nicehash_odds") or {}
     edge = package.get("edge_shadow") or {}
+    math_shadow = package.get("math_consistency_shadow") or {}
     market = public_market_context(package, now)
 
     freshness = feed_freshness(feed, now)
@@ -347,6 +352,12 @@ def package_alert_payload(package, previous_signal, now, feed):
             "productionOverride": edge.get("production_override") is True,
         },
         "publicMarket": market,
+        "mathConsistency": {
+            "status": math_shadow.get("status"),
+            "productionOverride": (
+                math_shadow.get("production_override") is True
+            ),
+        },
         "freshness": freshness,
         "relayVersion": feed.get("relay_version"),
         "decisionEngine": feed.get("decision_engine"),
@@ -505,6 +516,7 @@ OUT_FILE.write_text(
                     "marketMaxAgeMinutes": MARKET_MAX_AGE_MINUTES,
                     "dataMustBeFresh": True,
                     "uniqueFeedSnapshotsRequired": True,
+                    "mathConsistencyMustPassWhenApplicable": True,
                 },
             },
         },
