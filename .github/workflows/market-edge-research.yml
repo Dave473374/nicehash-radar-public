@@ -24,6 +24,9 @@ on:
       - scripts/build_verified_hit_market_context.py
       - tests/test_verified_hit_market_context.py
       - docs/verified-hit-market-context.md
+      - scripts/build_palladium_hit_control_comparison.py
+      - tests/test_market_palladium_hit_controls.py
+      - docs/palladium-hit-controls.md
       - research/onchain-hit-verification.jsonl
       - docs/alert-latency-policy.md
       - docs/lag-evidence-integrity.md
@@ -49,6 +52,9 @@ on:
       - scripts/build_verified_hit_market_context.py
       - tests/test_verified_hit_market_context.py
       - docs/verified-hit-market-context.md
+      - scripts/build_palladium_hit_control_comparison.py
+      - tests/test_market_palladium_hit_controls.py
+      - docs/palladium-hit-controls.md
       - research/onchain-hit-verification.jsonl
       - docs/alert-latency-policy.md
       - docs/lag-evidence-integrity.md
@@ -98,6 +104,10 @@ jobs:
             --episodes /tmp/lag-episodes.jsonl \
             --output /tmp/verified-hit-market-context.jsonl \
             --report /tmp/verified-hit-market-context-report.json
+          python3 scripts/build_palladium_hit_control_comparison.py \
+            --hits /tmp/verified-hit-market-context.jsonl \
+            --pairs /tmp/market-edge-pairs.jsonl \
+            --output /tmp/palladium-hit-control-report.json
       - uses: actions/upload-artifact@v4
         with:
           name: market-edge-research-${{ github.run_id }}
@@ -111,6 +121,7 @@ jobs:
             /tmp/alert-latency-report.json
             /tmp/verified-hit-market-context.jsonl
             /tmp/verified-hit-market-context-report.json
+            /tmp/palladium-hit-control-report.json
           retention-days: 7
           if-no-files-found: error
 
@@ -145,11 +156,12 @@ jobs:
           python3 scripts/build_lag_episodes.py
           python3 scripts/build_alert_latency_report.py
           python3 scripts/build_verified_hit_market_context.py
+          python3 scripts/build_palladium_hit_control_comparison.py
       - name: Persist only public research outputs
         run: |
           git config user.name 'NiceHash Radar Bot'
           git config user.email 'actions@github.com'
-          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-controls.jsonl research/lag-report.json research/alert-latency-report.json research/verified-hit-market-context.jsonl research/verified-hit-market-context-report.json
+          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-controls.jsonl research/lag-report.json research/alert-latency-report.json research/verified-hit-market-context.jsonl research/verified-hit-market-context-report.json research/palladium-hit-control-report.json
           git diff --cached --quiet && exit 0
           git commit -m 'Update public market research (no decision changes)'
           for attempt in 1 2 3; do
