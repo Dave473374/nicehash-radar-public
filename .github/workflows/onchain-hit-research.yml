@@ -7,6 +7,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - scripts/collect_realized_blocks.py
       - scripts/backfill_public_easymining_hits.py
       - scripts/verify_onchain_hits.py
       - tests/test_public_hit_backfill.py
@@ -39,14 +40,17 @@ jobs:
       - name: Unit tests without network
         run: |
           python3 -m unittest tests.test_public_hit_backfill tests.test_onchain_hit_verification -v
-      - name: Public network smoke (no credentials, no writes)
+      - name: Small public-network smoke
         run: |
-          python3 scripts/backfill_public_easymining_hits.py --max-pages 2 --output /tmp/public-easymining-hit-history.jsonl
+          python3 scripts/collect_realized_blocks.py --pages 2 --output /tmp/realized-blocks.jsonl
+          python3 scripts/backfill_public_easymining_hits.py \
+            --input /tmp/realized-blocks.jsonl \
+            --output /tmp/public-easymining-hit-history.jsonl
           python3 scripts/verify_onchain_hits.py \
             --input /tmp/public-easymining-hit-history.jsonl \
             --ledger /tmp/onchain-hit-verification.jsonl \
             --report /tmp/onchain-hit-report.json \
-            --max-new 6
+            --max-new 8
           cat /tmp/onchain-hit-report.json
 
   publish:
@@ -71,9 +75,9 @@ jobs:
         run: |
           python3 scripts/check_forbidden_admin_access.py
           python3 scripts/check_private_api_policy.py
-      - name: Extend public success-event history and verify new BTC/BCH events
+      - name: Build and verify from existing public success-event archive
         run: |
-          python3 scripts/backfill_public_easymining_hits.py --max-pages 20
+          python3 scripts/backfill_public_easymining_hits.py
           python3 scripts/verify_onchain_hits.py --max-new 25
       - name: Persist research-only outputs
         run: |

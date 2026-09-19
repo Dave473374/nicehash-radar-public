@@ -1,16 +1,15 @@
-"""Verify public EasyMining hit events against independent on-chain explorers.
+"""Verify public EasyMining success events against independent chain data.
 
-BTC uses mempool.space and BCH uses bchexplorer.cash. Both expose mempool-style
-read-only REST endpoints. Verification is research/audit only and cannot alter
-CURRENT, BATCH, alerts, orders, or hit-rate denominators.
+Research/audit only. It never changes CURRENT, BATCH, alerts, orders, or
+hit-rate denominators.
 """
 from __future__ import annotations
-
 import argparse
 from collections import Counter
 from datetime import datetime, timezone
 import json
 import math
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -19,10 +18,10 @@ DEFAULT_LEDGER = Path("research/onchain-hit-verification.jsonl")
 DEFAULT_REPORT = Path("research/onchain-hit-report.json")
 MAX_RESPONSE_BYTES = 4_000_000
 
-EXPLORERS = {
-    "BTC": "https://mempool.space",
-    "BCH": "https://bchexplorer.cash",
-}
+MEMPOOL_BASES = {"BTC": "https://mempool.space", "BCH": "https://bchexplorer.cash"}
+ZEC_BASE = "https://api.blockchair.com"
+KAS_BASE = "https://api.kaspa.org"
+SUPPORTED = {"BTC", "BCH", "ZEC", "KAS"}
 KNOWN_TAGS = (
     (b"/NiceHashMining/", "NICEHASH_MINING_TAG"),
     (b"/NiceHashSolo/", "NICEHASH_SOLO_TAG"),
@@ -35,7 +34,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise RuntimeError("On-chain explorer redirect refused")
 
 
-def utc_now() -> str:
+def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -43,11 +42,16 @@ def finite(value):
     return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(float(value))
 
 
-def get(opener, base: str, path: str, json_expected: bool):
-    if base not in EXPLORERS.values() or not path.startswith("/api/"):
-        raise ValueError("Explorer request not allowlisted")
+def get(opener, base, path, json_expected=True):
+    if base not in set(MEMPOOL_BASES.values()) | {ZEC_BASE, KAS_BASE}:
+        raise ValueError("Explorer host not allowlisted")
+    if not path.startswith("/"):
+        raise ValueError("Explorer path invalid")
     url = base + path
-    request = urllib.request.Request(url, method="GET", headers={"User-Agent": "nicehash-radar-onchain-audit/1.0", "Accept": "application/json,text/plain"})
+    request = urllib.request.Request(
+        url, method="GET",
+        headers={"User-Agent": "nicehash-radar-onchain-audit/2.0", "Accept": "application/json,text/plain"},
+    )
     with opener.open(request, timeout=30) as response:
         if response.status != 200 or response.geturl() != url:
             raise RuntimeError("Unexpected explorer response")
@@ -58,18 +62,19 @@ def get(opener, base: str, path: str, json_expected: bool):
     return json.loads(text) if json_expected else text
 
 
-def classify_tag(script_hex: str):
+def classify_tag(script_hex):
     try:
         raw = bytes.fromhex(str(script_hex or ""))
     except ValueError:
         return "INVALID_COINBASE_SCRIPTSIG", None
+    lower = raw.lower()
     for needle, label in KNOWN_TAGS:
-        if needle.lower() in raw.lower():
+        if needle.lower() in lower:
             return label, needle.decode("ascii")
     return "UNKNOWN_TAG", None
 
 
-def source_event_id(event: dict) -> str:
+def source_event_id(event):
     return str(event.get("eventId") or "").strip() or "|".join(
         str(event.get(k) or "") for k in ("coin", "blockHeight", "packageId", "blockHash")
     )
@@ -83,7 +88,7 @@ def parse_source_time(value):
         if not math.isfinite(number):
             return None
         if number > 10_000_000_000:
-            number /= 1000.0
+            number /= 1000
         try:
             return datetime.fromtimestamp(number, tz=timezone.utc)
         except (ValueError, OSError, OverflowError):
@@ -95,15 +100,12 @@ def parse_source_time(value):
         return None
 
 
-def verify_event(event: dict, opener=None, now=None):
-    now = now or utc_now()
-    coin = str(event.get("coin") or "").upper()
-    event_id = source_event_id(event)
-    common = {
-        "schemaVersion": 1,
-        "eventId": event_id,
+def common(event, now):
+    return {
+        "schemaVersion": 2,
+        "eventId": source_event_id(event),
         "verifiedAt": now,
-        "coin": coin or None,
+        "coin": str(event.get("coin") or "").upper() or None,
         "blockHeight": event.get("blockHeight"),
         "packageName": event.get("packageName"),
         "packageId": event.get("packageId"),
@@ -116,94 +118,159 @@ def verify_event(event: dict, opener=None, now=None):
         "canRaiseBuySignal": False,
         "canSupplyMissDenominator": False,
     }
-    if coin not in EXPLORERS:
-        return {**common, "status": "UNSUPPORTED_COIN", "explorer": None}
-    try:
-        height = int(event.get("blockHeight"))
-        if height <= 0:
-            raise ValueError
-    except (TypeError, ValueError):
-        return {**common, "status": "INVALID_BLOCK_HEIGHT", "explorer": EXPLORERS[coin]}
 
-    base = EXPLORERS[coin]
+
+def verify_mempool(event, opener, now):
+    coin = str(event.get("coin") or "").upper()
+    base = MEMPOOL_BASES[coin]
+    result = common(event, now)
+    height = int(event.get("blockHeight"))
+    block_hash = get(opener, base, f"/api/block-height/{height}", False).strip()
+    if len(block_hash) != 64:
+        raise ValueError("Invalid block hash")
+    expected = str(event.get("blockHash") or "").lower().strip()
+    if len(expected) == 64 and expected != block_hash.lower():
+        return {**result, "status": "CONFLICT_BLOCK_HASH", "explorer": base, "onchainBlockHash": block_hash}
+
+    block = get(opener, base, f"/api/block/{block_hash}")
+    txs = get(opener, base, f"/api/block/{block_hash}/txs/0")
+    if not isinstance(block, dict) or not isinstance(txs, list) or not txs:
+        raise ValueError("Unexpected mempool-style schema")
+    tx0 = txs[0]
+    vin, vout = tx0.get("vin"), tx0.get("vout")
+    if not isinstance(vin, list) or not vin or not isinstance(vin[0], dict):
+        raise ValueError("Coinbase input missing")
+    tag_class, tag = classify_tag(vin[0].get("scriptsig"))
+    reward_sats = None
+    if isinstance(vout, list):
+        vals = [x.get("value") for x in vout if isinstance(x, dict)]
+        if vals and all(finite(x) for x in vals):
+            reward_sats = sum(float(x) for x in vals)
+    reward_native = reward_sats / 100_000_000 if reward_sats is not None else None
+    payout_ratio = None
+    try:
+        payout = float(event.get("payoutReward"))
+        if math.isfinite(payout) and payout >= 0 and reward_native and reward_native > 0:
+            payout_ratio = payout / reward_native * 100
+    except (TypeError, ValueError):
+        pass
+
+    if tag_class == "NICEHASH_TAG":
+        status = "VERIFIED_ON_CHAIN_NICEHASH_TAG"
+        strength = "BLOCK_HASH_AND_NICEHASH_TAG"
+    elif tag_class in {"NICEHASH_MINING_TAG", "NICEHASH_SOLO_TAG"}:
+        status = "VERIFIED_ON_CHAIN_OTHER_NICEHASH_TAG"
+        strength = "BLOCK_HASH_AND_OTHER_NICEHASH_TAG"
+    else:
+        status = "VERIFIED_ON_CHAIN_BLOCK_MATCH"
+        strength = "BLOCK_HASH_ONLY_TAG_UNCONFIRMED"
+
+    return {
+        **result,
+        "status": status,
+        "verificationStrength": strength,
+        "explorer": base,
+        "onchainBlockHash": block_hash,
+        "onchainTimestamp": block.get("timestamp"),
+        "onchainDifficulty": block.get("difficulty"),
+        "coinbaseTagClass": tag_class,
+        "coinbaseTag": tag,
+        "coinbaseRewardNative": round(reward_native, 12) if reward_native is not None else None,
+        "payoutToCoinbasePercent": round(payout_ratio, 6) if payout_ratio is not None else None,
+    }
+
+
+def first_blockchair_block(payload):
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict) or not payload["data"]:
+        raise ValueError("Unexpected Blockchair response")
+    entry = next(iter(payload["data"].values()))
+    if not isinstance(entry, dict):
+        raise ValueError("Unexpected Blockchair block entry")
+    block = entry.get("block")
+    if not isinstance(block, dict):
+        raise ValueError("Blockchair block missing")
+    return block
+
+
+def verify_zec(event, opener, now):
+    result = common(event, now)
+    height = int(event.get("blockHeight"))
+    payload = get(opener, ZEC_BASE, f"/zcash/dashboards/block/{height}")
+    block = first_blockchair_block(payload)
+    block_hash = str(block.get("hash") or "")
+    expected = str(event.get("blockHash") or "").lower().strip()
+    if len(expected) == 64 and block_hash and expected != block_hash.lower():
+        return {**result, "status": "CONFLICT_BLOCK_HASH", "explorer": ZEC_BASE, "onchainBlockHash": block_hash}
+    if int(block.get("id") or block.get("height") or height) != height:
+        raise ValueError("ZEC block height mismatch")
+    return {
+        **result,
+        "status": "VERIFIED_ON_CHAIN_BLOCK_MATCH",
+        "verificationStrength": "BLOCK_HEIGHT_HASH_INDEPENDENT_EXPLORER",
+        "explorer": ZEC_BASE,
+        "onchainBlockHash": block_hash or None,
+        "onchainTimestamp": block.get("time") or block.get("date"),
+        "onchainDifficulty": block.get("difficulty"),
+        "coinbaseRewardNative": block.get("reward"),
+        "explorerMinerLabel": block.get("guessed_miner"),
+        "coinbaseTagClass": "NOT_CHECKED_FOR_ZEC_PHASE1",
+    }
+
+
+def verify_kas(event, opener, now):
+    result = common(event, now)
+    expected = str(event.get("blockHash") or "").lower().strip()
+    if len(expected) != 64:
+        return {**result, "status": "INVALID_BLOCK_HASH", "explorer": KAS_BASE}
+    path = f"/blocks/{expected}?includeTransactions=true&includeColor=false"
+    block = get(opener, KAS_BASE, path)
+    if not isinstance(block, dict):
+        raise ValueError("Unexpected Kaspa block schema")
+    verbose = block.get("verboseData") or {}
+    header = block.get("header") or {}
+    extra = block.get("extra") or {}
+    onchain_hash = str(verbose.get("hash") or "").lower()
+    if onchain_hash != expected:
+        return {**result, "status": "CONFLICT_BLOCK_HASH", "explorer": KAS_BASE, "onchainBlockHash": onchain_hash or None}
+    miner_info = extra.get("minerInfo")
+    nicehash_label = isinstance(miner_info, str) and "nicehash" in miner_info.lower()
+    status = "VERIFIED_ON_CHAIN_NICEHASH_MINER_INFO" if nicehash_label else "VERIFIED_ON_CHAIN_BLOCK_MATCH"
+    strength = "BLOCK_HASH_AND_NICEHASH_MINER_INFO" if nicehash_label else "BLOCK_HASH_INDEPENDENT_OFFICIAL_API"
+    return {
+        **result,
+        "status": status,
+        "verificationStrength": strength,
+        "explorer": KAS_BASE,
+        "onchainBlockHash": onchain_hash,
+        "onchainTimestamp": header.get("timestamp"),
+        "onchainDifficulty": verbose.get("difficulty"),
+        "kaspaBlueScore": verbose.get("blueScore") or header.get("blueScore"),
+        "kaspaDaaScore": header.get("daaScore"),
+        "explorerMinerInfo": miner_info,
+        "explorerMinerAddress": extra.get("minerAddress"),
+        "coinbaseTagClass": "KASPA_MINER_INFO" if nicehash_label else "KASPA_MINER_INFO_UNCONFIRMED",
+    }
+
+
+def verify_event(event, opener=None, now=None):
+    now = now or utc_now()
+    coin = str(event.get("coin") or "").upper()
+    result = common(event, now)
+    if coin not in SUPPORTED:
+        return {**result, "status": "UNSUPPORTED_COIN", "explorer": None}
     opener = opener or urllib.request.build_opener(NoRedirect())
     try:
-        block_hash = get(opener, base, f"/api/block-height/{height}", False).strip()
-        if len(block_hash) != 64:
-            raise ValueError("Explorer returned invalid block hash")
-        expected_hash = str(event.get("blockHash") or "").lower().strip()
-        if len(expected_hash) == 64 and expected_hash != block_hash.lower():
-            return {
-                **common,
-                "status": "CONFLICT_BLOCK_HASH",
-                "explorer": base,
-                "onchainBlockHash": block_hash,
-            }
-
-        block = get(opener, base, f"/api/block/{block_hash}", True)
-        txs = get(opener, base, f"/api/block/{block_hash}/txs/0", True)
-        if not isinstance(block, dict) or not isinstance(txs, list) or not txs or not isinstance(txs[0], dict):
-            raise ValueError("Unexpected explorer block/transaction schema")
-        tx0 = txs[0]
-        vin = tx0.get("vin")
-        vout = tx0.get("vout")
-        if not isinstance(vin, list) or not vin or not isinstance(vin[0], dict):
-            raise ValueError("Coinbase input missing")
-        tag_status, tag = classify_tag(vin[0].get("scriptsig"))
-
-        reward_sats = None
-        if isinstance(vout, list):
-            values = [x.get("value") for x in vout if isinstance(x, dict)]
-            if values and all(finite(x) for x in values):
-                reward_sats = sum(float(x) for x in values)
-        reward_native = reward_sats / 100_000_000 if reward_sats is not None else None
-        payout_ratio = None
-        try:
-            payout = float(event.get("payoutReward"))
-            if math.isfinite(payout) and payout >= 0 and reward_native and reward_native > 0:
-                payout_ratio = payout / reward_native * 100
-        except (TypeError, ValueError):
-            pass
-
-        source_time = parse_source_time(event.get("time") or event.get("createdTs"))
-        block_ts = block.get("timestamp")
-        delta_seconds = None
-        if source_time is not None and finite(block_ts):
-            onchain_dt = datetime.fromtimestamp(float(block_ts), tz=timezone.utc)
-            delta_seconds = abs((source_time - onchain_dt).total_seconds())
-
-        if tag_status == "NICEHASH_TAG":
-            status = "VERIFIED_ON_CHAIN_NICEHASH_TAG"
-        elif tag_status in {"NICEHASH_MINING_TAG", "NICEHASH_SOLO_TAG"}:
-            status = "VERIFIED_ON_CHAIN_OTHER_NICEHASH_TAG"
-        elif tag_status == "INVALID_COINBASE_SCRIPTSIG":
-            status = "BLOCK_VERIFIED_INVALID_TAG_DATA"
-        else:
-            status = "BLOCK_VERIFIED_TAG_UNKNOWN"
-
-        return {
-            **common,
-            "status": status,
-            "explorer": base,
-            "onchainBlockHash": block_hash,
-            "onchainTimestamp": block_ts,
-            "onchainDifficulty": block.get("difficulty"),
-            "coinbaseTagClass": tag_status,
-            "coinbaseTag": tag,
-            "coinbaseRewardNative": round(reward_native, 12) if reward_native is not None else None,
-            "payoutToCoinbasePercent": round(payout_ratio, 6) if payout_ratio is not None else None,
-            "sourceTimeVsOnchainSeconds": round(delta_seconds, 3) if delta_seconds is not None else None,
-        }
+        if coin in MEMPOOL_BASES:
+            return verify_mempool(event, opener, now)
+        if coin == "ZEC":
+            return verify_zec(event, opener, now)
+        if coin == "KAS":
+            return verify_kas(event, opener, now)
     except Exception as exc:
-        return {
-            **common,
-            "status": "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH",
-            "explorer": base,
-            "errorType": type(exc).__name__,
-        }
+        return {**result, "status": "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH", "explorer": None, "errorType": type(exc).__name__}
 
 
-def load_jsonl(path: Path):
+def load_jsonl(path):
     rows = []
     if not path.exists():
         return rows
@@ -215,26 +282,21 @@ def load_jsonl(path: Path):
     return rows
 
 
-def build(input_path: Path, ledger_path: Path, report_path: Path, max_new: int, verifier=verify_event, now=None):
+def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, now=None):
     if max_new < 1 or max_new > 100:
         raise ValueError("max_new must be 1..100")
     now = now or utc_now()
     events = load_jsonl(input_path)
-    old = load_jsonl(ledger_path)
-    latest = {}
-    for row in old:
-        eid = source_event_id(row)
-        if eid:
-            latest[eid] = row
-
+    latest = {source_event_id(r): r for r in load_jsonl(ledger_path) if source_event_id(r)}
     processed = 0
+
     for event in events:
         eid = source_event_id(event)
         coin = str(event.get("coin") or "").upper()
         previous = latest.get(eid)
-        if previous and previous.get("status") not in {"SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH"}:
+        if previous and previous.get("status") != "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH":
             continue
-        if coin not in EXPLORERS:
+        if coin not in SUPPORTED:
             if previous is None:
                 latest[eid] = verifier(event, now=now)
             continue
@@ -243,15 +305,21 @@ def build(input_path: Path, ledger_path: Path, report_path: Path, max_new: int, 
         latest[eid] = verifier(event, now=now)
         processed += 1
 
-    rows = sorted(latest.values(), key=lambda r: (str(r.get("coin") or ""), int(r.get("blockHeight") or 0), str(r.get("eventId") or "")), reverse=True)
+    rows = sorted(
+        latest.values(),
+        key=lambda r: (str(r.get("coin") or ""), int(r.get("blockHeight") or 0), str(r.get("eventId") or "")),
+        reverse=True,
+    )
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    ledger_path.write_text("".join(json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n" for row in rows), encoding="utf-8")
-
+    ledger_path.write_text(
+        "".join(json.dumps(r, separators=(",", ":"), allow_nan=False) + "\n" for r in rows),
+        encoding="utf-8",
+    )
     counts = Counter(str(r.get("status") or "UNKNOWN") for r in rows)
-    tag_counts = Counter(str(r.get("coinbaseTagClass") or "NONE") for r in rows)
+    by_coin = Counter(str(r.get("coin") or "UNKNOWN") for r in rows if str(r.get("status") or "").startswith("VERIFIED_ON_CHAIN"))
     verified = sum(v for k, v in counts.items() if k.startswith("VERIFIED_ON_CHAIN"))
     report = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": now,
         "role": "ONCHAIN_HIT_VERIFICATION_RESEARCH_ONLY",
         "currentProductionModelChanged": False,
@@ -262,12 +330,17 @@ def build(input_path: Path, ledger_path: Path, report_path: Path, max_new: int, 
         "inputEventCount": len(events),
         "ledgerEventCount": len(rows),
         "processedThisRun": processed,
-        "verifiedNiceHashTagCount": counts.get("VERIFIED_ON_CHAIN_NICEHASH_TAG", 0),
         "verifiedOnchainCount": verified,
+        "verifiedByCoin": dict(by_coin),
         "statusCounts": dict(counts),
-        "tagCounts": dict(tag_counts),
-        "supportedCoins": sorted(EXPLORERS),
-        "policy": "Independent chain audit only. A verified HIT is numerator/context evidence and never supplies missing tickets or a MISS denominator.",
+        "supportedCoins": sorted(SUPPORTED),
+        "packageCoverageIntent": {
+            "Gold": "BTC",
+            "Silver": "BCH",
+            "Bronze": "ZEC",
+            "Titanium": "KAS",
+        },
+        "policy": "Independent chain audit only. Verified HITs are numerator/context evidence; no chain explorer supplies missing EasyMining tickets or a MISS denominator.",
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
@@ -283,7 +356,7 @@ def main():
     args = parser.parse_args()
     report = build(args.input, args.ledger, args.report, args.max_new)
     print("ONCHAIN HIT VERIFICATION COMPLETE; research-only; no account access")
-    print(json.dumps({k: report[k] for k in ("inputEventCount", "ledgerEventCount", "processedThisRun", "verifiedOnchainCount", "verifiedNiceHashTagCount", "statusCounts")}, sort_keys=True))
+    print(json.dumps({k: report[k] for k in ("inputEventCount","ledgerEventCount","processedThisRun","verifiedOnchainCount","verifiedByCoin","statusCounts")}, sort_keys=True))
 
 
 if __name__ == "__main__":

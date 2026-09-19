@@ -1,45 +1,50 @@
 # On-chain HIT verification (research only)
 
-Purpose: independently verify public EasyMining **success events** against the
-blockchain without changing CURRENT, BATCH, alerts, or any order behavior.
+Purpose: independently verify public EasyMining **success events** without
+changing CURRENT 2.9.0, BATCH, alerts, or any order behavior.
+
+## Package / chain coverage
+
+- Gold → BTC
+- Silver → BCH
+- Bronze → ZEC
+- Titanium → KAS
+
+Palladium (LTC/DOGE merged mining) is intentionally deferred until the verifier
+can represent the two chains correctly rather than pretending one block/tag is a
+complete merged-mining proof.
 
 ## Evidence layers
 
-1. `NICEHASH_PUBLIC_SINGLE_REWARD` supplies the public EasyMining package/event
-   attribution: coin, package, block height/hash and payout.
-2. An independent block explorer verifies the block and coinbase data:
-   - BTC: `mempool.space`
-   - BCH: `bchexplorer.cash`
-3. The verifier records the exact coinbase tag class. `/NiceHash/`,
-   `/NiceHashMining/` and `/NiceHashSolo/` are kept distinct rather than treated
-   as interchangeable.
+1. The existing allowlisted public NiceHash collector
+   (`scripts/collect_realized_blocks.py`) reads the public
+   `singleReward` endpoint and stores success events. It now supports a deeper
+   pagination window with redirect refusal and bounded responses.
+2. `scripts/backfill_public_easymining_hits.py` is local-only. It normalizes
+   that archive for research and performs no HTTP requests.
+3. Independent chain evidence:
+   - BTC: mempool.space
+   - BCH: bchexplorer.cash
+   - ZEC: Blockchair Zcash dashboard API
+   - KAS: official Kaspa Explorer REST API (`api.kaspa.org`)
 
-The BCH explorer is a mempool-style open-source explorer and exposes the same
-read-only block/transaction API shape used here. Its pool matching code also
-parses the coinbase `scriptsig`, which is the field this audit reads.
+BTC/BCH additionally inspect the coinbase `scriptsig` and keep
+`/NiceHash/`, `/NiceHashMining/`, and `/NiceHashSolo/` distinct. A block
+with another NiceHash tag is not silently relabeled as an EasyMining-specific
+tag.
 
-## Historical backfill
-
-`scripts/backfill_public_easymining_hits.py` walks the public NiceHash
-`/hashpower/api/v2/public/solo/singleReward` pagination without credentials and
-builds `research/public-easymining-hit-history.jsonl`. Pagination stops on an
-empty or repeated page and refuses silent identity rewrites.
-
-The backfill is deliberately separate from `calibration/realized-blocks.jsonl`:
-it is a deeper research archive, not a production input.
+For ZEC phase 1, independent verification is block-height/hash plus explorer
+metadata (timestamp/difficulty/reward/miner label where available). For KAS,
+the official API verifies the exact block hash and records timestamp,
+difficulty, blue/DAA score and miner info when available.
 
 ## Critical limitation
 
-This is **winner/numerator evidence only**. The blockchain cannot reveal all
-EasyMining tickets that failed. Therefore neither the backfill nor on-chain
-verification can supply a MISS denominator, estimate a user's hit rate by
-itself, justify gambler's-fallacy timing, or raise a BUY signal.
+Every record here is a **winner**. Neither a blockchain nor a public recent-block
+list reveals all EasyMining tickets that failed. Therefore this dataset cannot
+supply a MISS denominator, estimate ticket hit rate by itself, justify
+time-since-last-block strategies, or raise a BUY signal.
 
-## Other trackers
-
-`wenblockniceha.sh` currently exposes a public NiceHash block view and historical
-attribution, but the service is deprecated and third-party. It is useful as a
-secondary manual cross-check, not as an authoritative ingestion source. BTC
-NiceHash pool history on mempool.space is also useful context, but its NiceHash
-pool classification includes multiple NiceHash coinbase tags; it must not be
-assumed to mean EasyMining without tag/package evidence.
+The value is data integrity: confirm that public NiceHash HIT attribution points
+to a real chain event and build a better timestamp/difficulty/reward history for
+research.
