@@ -254,6 +254,69 @@ class GitFeedContextTests(unittest.TestCase):
         )
         self.assertFalse(sensitivity["canRaiseSignal"])
 
+    def test_same_relay_endpoint_and_sensitivity_comparison_excludes_other_relay(self):
+        commits = [
+            commit(
+                checked="2026-09-19T11:00:00+00:00",
+                committed="2026-09-19T11:01:00+00:00",
+                p=package(work_scale=1.0, merge_diff=100, version="2.8.2"),
+                version="2.8.2",
+            ),
+            commit(
+                checked="2026-09-19T11:55:00+00:00",
+                committed="2026-09-19T11:56:00+00:00",
+                p=package(work_scale=1.4, merge_diff=180, expected=95, version="2.8.2"),
+                version="2.8.2",
+            ),
+            commit(
+                checked="2026-09-19T12:00:00+00:00",
+                committed="2026-09-19T12:01:00+00:00",
+                p=package(work_scale=1.0, merge_diff=100, version="2.8.2"),
+                version="2.8.2",
+            ),
+            commit(
+                checked="2026-09-19T12:55:00+00:00",
+                committed="2026-09-19T12:56:00+00:00",
+                p=package(work_scale=1.05, merge_diff=95, expected=81, version="2.8.2"),
+                version="2.8.2",
+            ),
+            commit(
+                checked="2026-09-19T13:00:00+00:00",
+                committed="2026-09-19T13:01:00+00:00",
+                p=package(work_scale=1.0, merge_diff=100, version="2.9.0"),
+                version="2.9.0",
+            ),
+            commit(
+                checked="2026-09-19T13:55:00+00:00",
+                committed="2026-09-19T13:56:00+00:00",
+                p=package(work_scale=3.0, merge_diff=20, expected=50, version="2.9.0"),
+                version="2.9.0",
+            ),
+        ]
+        doc = {"list": [
+            order(result=True, start="2026-09-19T12:00:00+00:00"),
+            order(result=False, start="2026-09-19T13:00:00+00:00"),
+            order(result=False, start="2026-09-19T14:00:00+00:00"),
+        ]}
+        result = m.analyze(doc, commits)
+        summary = result["summary"]
+        endpoint_key = (
+            "Palladium S|RELAY_2.8.2|"
+            "CURRENCY_LEGACY_2_8_2_BTC_ONLY_SCHEMA"
+        )
+        endpoint_comp = summary["endpointHitMinusMissByRelay"][endpoint_key]
+        self.assertEqual(endpoint_comp["hitOrders"], 1)
+        self.assertEqual(endpoint_comp["missOrders"], 1)
+
+        sensitivity = summary["baselineToleranceSensitivity"]
+        key = (
+            "20m|Palladium S|60m|RELAY_2.8.2|"
+            "CURRENCY_LEGACY_2_8_2_BTC_ONLY_SCHEMA"
+        )
+        comp = sensitivity["hitMinusMissByRelay"][key]
+        self.assertEqual(comp["hitOrders"], 1)
+        self.assertEqual(comp["missOrders"], 1)
+
     def test_summary_has_no_order_timestamps_or_amounts(self):
         commits = [
             commit(

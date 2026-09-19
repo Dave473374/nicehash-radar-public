@@ -198,6 +198,26 @@ jobs:
               for key, value in (git_context_summary.get('hitMinusMiss') or {}).items()
               if family_key(key)
           }
+          git_endpoint_by_relay = {
+              key: value
+              for key, value in (git_context_summary.get('endpointByRelayPackageOutcome') or {}).items()
+              if family_key(key)
+          }
+          git_endpoint_comparisons_by_relay = {
+              key: value
+              for key, value in (git_context_summary.get('endpointHitMinusMissByRelay') or {}).items()
+              if family_key(key)
+          }
+          git_window_by_relay = {
+              key: value
+              for key, value in (git_context_summary.get('byRelayPackageHorizonOutcome') or {}).items()
+              if family_key(key)
+          }
+          git_window_comparisons_by_relay = {
+              key: value
+              for key, value in (git_context_summary.get('hitMinusMissByRelay') or {}).items()
+              if family_key(key)
+          }
           git_sensitivity = git_context_summary.get('baselineToleranceSensitivity') or {}
 
           def sensitivity_family_key(key):
@@ -216,6 +236,16 @@ jobs:
           git_sensitivity_comparisons = {
               key: value
               for key, value in (git_sensitivity.get('hitMinusMiss') or {}).items()
+              if sensitivity_family_key(key)
+          }
+          git_sensitivity_by_relay = {
+              key: value
+              for key, value in (git_sensitivity.get('byToleranceRelayPackageHorizonOutcome') or {}).items()
+              if sensitivity_family_key(key)
+          }
+          git_sensitivity_comparisons_by_relay = {
+              key: value
+              for key, value in (git_sensitivity.get('hitMinusMissByRelay') or {}).items()
               if sensitivity_family_key(key)
           }
 
@@ -260,6 +290,10 @@ jobs:
               'gitFeedWindowStatusByPackageHorizonOutcome': dict(sorted(git_context_window_status.items())),
               'gitFeedByPackageHorizonOutcome': dict(sorted(git_context_windows.items())),
               'gitFeedHitMinusMiss': dict(sorted(git_context_comparisons.items())),
+              'gitFeedEndpointByRelayPackageOutcome': dict(sorted(git_endpoint_by_relay.items())),
+              'gitFeedEndpointHitMinusMissByRelay': dict(sorted(git_endpoint_comparisons_by_relay.items())),
+              'gitFeedByRelayPackageHorizonOutcome': dict(sorted(git_window_by_relay.items())),
+              'gitFeedHitMinusMissByRelay': dict(sorted(git_window_comparisons_by_relay.items())),
               'gitFeedBaselineToleranceSensitivity': {
                   'role': git_sensitivity.get('role'),
                   'primaryToleranceMinutes': git_sensitivity.get('primaryToleranceMinutes'),
@@ -267,6 +301,8 @@ jobs:
                   'windowStatusByTolerancePackageHorizonOutcome': dict(sorted(git_sensitivity_status.items())),
                   'byTolerancePackageHorizonOutcome': dict(sorted(git_sensitivity_windows.items())),
                   'hitMinusMiss': dict(sorted(git_sensitivity_comparisons.items())),
+                  'byToleranceRelayPackageHorizonOutcome': dict(sorted(git_sensitivity_by_relay.items())),
+                  'hitMinusMissByRelay': dict(sorted(git_sensitivity_comparisons_by_relay.items())),
                   'canRaiseSignal': False,
               },
               'marketContextOrdersByOutcome': orders,
