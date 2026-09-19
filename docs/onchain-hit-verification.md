@@ -30,7 +30,9 @@ also produced a reward.
    - ZEC: Blockchair Zcash dashboard API
    - KAS: official Kaspa Explorer REST API (`api.kaspa.org`)
    - Palladium LTC/DOGE: Blockchair Litecoin/Dogecoin block dashboards, with
-     each event scoped to the chain named by the NiceHash public success record
+     each event scoped to the chain named by the NiceHash public success record;
+     if Blockchair is unavailable, a keyless read-only ORDnet height/hash lookup
+     is used as a strict hash-only fallback
 
 BTC and BCH on the primary mempool-style path additionally inspect the coinbase `scriptsig` and keep
 `/NiceHash/`, `/NiceHashMining/`, and `/NiceHashSolo/` distinct. A block
@@ -48,6 +50,12 @@ child chain. The field `pairedChainEvidenceClaimed` remains false: verifying a
 DOGE block never manufactures an LTC HIT, and verifying an LTC block never
 manufactures a DOGE HIT. Public `singleReward.payoutReward` values for LTC and
 DOGE are normalized from 1e-8 native units before any payout/reward comparison.
+
+The Blockchair path may also record timestamp, difficulty, reward and miner label
+when present. The ORDnet fallback intentionally claims less: it confirms only
+the requested height/hash (plus non-critical metadata if present), records no
+coinbase reward, and never upgrades the paired chain. A real Blockchair hash
+conflict is returned directly and is never hidden by fallback.
 
 Previously stored Palladium events with status `UNSUPPORTED_COIN` are eligible
 for one-time re-verification now that LTC/DOGE are supported. Existing verified
