@@ -1,0 +1,29 @@
+name: Phase 0 Correctness Regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+      - phase0-correctness-hardening
+
+permissions:
+  contents: read
+
+jobs:
+  correctness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run 18 Phase 0 regression scenarios
+        run: python3 scripts/test_phase0_correctness.py
+      - name: Enforce Admin prohibition
+        run: python3 scripts/check_forbidden_admin_access.py
+      - name: Enforce private API read-only policy
+        run: python3 scripts/check_private_api_policy.py
