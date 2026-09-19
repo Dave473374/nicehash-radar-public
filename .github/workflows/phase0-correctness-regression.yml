@@ -8,7 +8,21 @@ on:
   push:
     branches:
       - main
-      - phase0-correctness-hardening
+    paths:
+      - "scripts/build_alert_events.py"
+      - "scripts/match_private_orders.py"
+      - "scripts/match_mining_events.py"
+      - "scripts/apply_math_consistency_shadow.py"
+      - "scripts/nicehash_private_readonly.py"
+      - "scripts/collect_shared_packages.py"
+      - "scripts/build_evidence_scorecard.py"
+      - "scripts/test_phase0_correctness.py"
+      - ".github/workflows/phase0-correctness-regression.yml"
+      - ".github/workflows/update-buy-feed.yml"
+      - ".github/workflows/phase3-buy-radar-alerts.yml"
+      - ".github/workflows/validate-buy-radar-evidence.yml"
+      - ".github/workflows/test-nicehash-private.yml"
+      - ".github/workflows/collect-shared-packages.yml"
 
 permissions:
   contents: read
@@ -21,7 +35,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run 18 Phase 0 regression scenarios
+      - name: Run Phase 0 regression scenarios
         run: python3 scripts/test_phase0_correctness.py
       - name: Enforce Admin prohibition
         run: python3 scripts/check_forbidden_admin_access.py
