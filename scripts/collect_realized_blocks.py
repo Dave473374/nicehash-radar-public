@@ -162,7 +162,7 @@ def collect(output: Path, pages: int, limit: int, fetcher=fetch_page, now=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--pages", type=int, default=20)
+    parser.add_argument("--pages", type=int, default=10)
     parser.add_argument("--limit", type=int, default=50)
     args = parser.parse_args()
     result = collect(args.output, args.pages, args.limit)

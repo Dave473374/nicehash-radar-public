@@ -290,20 +290,40 @@ def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, 
     latest = {source_event_id(r): r for r in load_jsonl(ledger_path) if source_event_id(r)}
     processed = 0
 
+    # Record unsupported event types without spending explorer budget.
     for event in events:
         eid = source_event_id(event)
         coin = str(event.get("coin") or "").upper()
+        if coin not in SUPPORTED and eid not in latest:
+            latest[eid] = verifier(event, now=now)
+
+    # High-frequency KAS hits can dominate chronological history. Verify
+    # supported chains round-robin so Bronze/Silver/Gold are not starved.
+    queues = {coin: [] for coin in sorted(SUPPORTED)}
+    for event in events:
+        eid = source_event_id(event)
+        coin = str(event.get("coin") or "").upper()
+        if coin not in SUPPORTED:
+            continue
         previous = latest.get(eid)
         if previous and previous.get("status") != "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH":
             continue
-        if coin not in SUPPORTED:
-            if previous is None:
-                latest[eid] = verifier(event, now=now)
-            continue
-        if processed >= max_new:
-            continue
-        latest[eid] = verifier(event, now=now)
-        processed += 1
+        queues[coin].append(event)
+
+    positions = {coin: 0 for coin in queues}
+    while processed < max_new:
+        progressed = False
+        for coin in sorted(queues):
+            pos = positions[coin]
+            if pos >= len(queues[coin]) or processed >= max_new:
+                continue
+            event = queues[coin][pos]
+            positions[coin] += 1
+            latest[source_event_id(event)] = verifier(event, now=now)
+            processed += 1
+            progressed = True
+        if not progressed:
+            break
 
     rows = sorted(
         latest.values(),

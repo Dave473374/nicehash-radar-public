@@ -75,10 +75,13 @@ jobs:
         run: |
           python3 scripts/check_forbidden_admin_access.py
           python3 scripts/check_private_api_policy.py
-      - name: Build and verify from existing public success-event archive
+      - name: Deep public success-event snapshot and balanced on-chain verification
         run: |
-          python3 scripts/backfill_public_easymining_hits.py
-          python3 scripts/verify_onchain_hits.py --max-new 25
+          python3 scripts/collect_realized_blocks.py --pages 50 --output /tmp/deep-realized-blocks.jsonl
+          python3 scripts/backfill_public_easymining_hits.py \
+            --input /tmp/deep-realized-blocks.jsonl \
+            --output research/public-easymining-hit-history.jsonl
+          python3 scripts/verify_onchain_hits.py --max-new 24
       - name: Persist research-only outputs
         run: |
           git config user.name 'NiceHash Radar Bot'

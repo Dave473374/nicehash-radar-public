@@ -58,6 +58,21 @@ def normalize(row):
 
 def build(input_path: Path, output_path: Path):
     by_key = {}
+
+    # Preserve prior research history even when the current public pagination
+    # window rolls forward.
+    if output_path.exists():
+        for line in output_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            old = json.loads(line)
+            if not isinstance(old, dict):
+                continue
+            key = identity(old)
+            if key in by_key and by_key[key] != old:
+                raise ValueError(f"Conflicting existing research event: {key}")
+            by_key[key] = old
+
     if input_path.exists():
         for line in input_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -67,8 +82,12 @@ def build(input_path: Path, output_path: Path):
                 continue
             item = normalize(row)
             key = identity(item)
-            if key in by_key and by_key[key] != item:
-                raise ValueError(f"Conflicting source event: {key}")
+            if key in by_key:
+                prior = by_key[key]
+                item["firstSeenAt"] = prior.get("firstSeenAt") or item.get("firstSeenAt")
+                for field in ("coin", "blockHeight", "blockHash", "packageId", "packageName"):
+                    if prior.get(field) != item.get(field):
+                        raise ValueError(f"Conflicting source event revision: {key}")
             by_key[key] = item
     rows = sorted(
         by_key.values(),

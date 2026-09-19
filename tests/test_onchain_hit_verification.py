@@ -105,6 +105,20 @@ class OnchainTests(unittest.TestCase):
         r=m.verify_event(ev("DOGE"))
         self.assertEqual(r["status"],"UNSUPPORTED_COIN")
 
+    def test_round_robin_prevents_kas_starvation(self):
+        calls = []
+        def fake_verify(e, now=None):
+            calls.append(e["coin"])
+            return {**e, "eventId": e["eventId"], "status": "VERIFIED_ON_CHAIN_BLOCK_MATCH", "coin": e["coin"]}
+        with tempfile.TemporaryDirectory() as d:
+            inp=Path(d)/"in.jsonl"; led=Path(d)/"led.jsonl"; rep=Path(d)/"rep.json"
+            rows = [ev("KAS", i, f"{i:064x}") for i in range(20, 10, -1)] + [
+                ev("ZEC", 9, "9"*64), ev("BCH", 8, "8"*64), ev("BTC", 7, "7"*64)
+            ]
+            inp.write_text("".join(json.dumps(x)+"\n" for x in rows))
+            m.build(inp,led,rep,4,verifier=fake_verify,now="2026-09-19T00:00:00+00:00")
+        self.assertEqual(set(calls), {"BTC","BCH","ZEC","KAS"})
+
     def test_build_never_supplies_miss_denominator(self):
         with tempfile.TemporaryDirectory() as d:
             inp=Path(d)/"in.jsonl"; led=Path(d)/"led.jsonl"; rep=Path(d)/"rep.json"

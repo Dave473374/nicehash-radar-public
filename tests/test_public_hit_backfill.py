@@ -69,6 +69,18 @@ class PublicHitArchiveTests(unittest.TestCase):
         self.assertTrue(all(x["canSupplyMissDenominator"] is False for x in got))
         self.assertTrue(all(x["canRaiseBuySignal"] is False for x in got))
 
+    def test_research_archive_preserves_prior_rolloff(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "r.jsonl"
+            dst = Path(d) / "h.jsonl"
+            old = backfill.normalize(collector.to_record(event(90, "ZEC", "Bronze S"), "2026-09-18T00:00:00+00:00"))
+            dst.write_text(json.dumps(old) + "\n")
+            src.write_text(json.dumps(collector.to_record(event(100, "KAS", "Titanium S"), "2026-09-19T00:00:00+00:00")) + "\n")
+            result = backfill.build(src, dst)
+            got = [json.loads(x) for x in dst.read_text().splitlines()]
+        self.assertEqual(result["recordsStored"], 2)
+        self.assertEqual({x["coin"] for x in got}, {"ZEC", "KAS"})
+
     def test_event_id_stable(self):
         row = collector.to_record(event(100), "x")
         self.assertEqual(backfill.event_id(row), backfill.event_id(dict(row)))
