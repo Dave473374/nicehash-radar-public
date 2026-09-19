@@ -673,7 +673,11 @@ def analyze(order_doc: dict, commit_rows: list[dict]) -> dict:
         if not isinstance(order, dict):
             continue
         rows.append({
+            "orderStartTs": order.get("startTs"),
             "packageName": order.get("packageName"),
+            "currencyMarket": order.get("currencyMarket"),
+            "coin": order.get("soloMiningCoin"),
+            "mergeCoin": order.get("soloMiningMergeCoin"),
             "outcome": outcome(order),
             "gitFeedPreEntry": build_order_context(order, points),
         })
