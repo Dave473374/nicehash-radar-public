@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import math
+from statistics import median
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,8 @@ DEFAULT_OUTPUT = Path("/tmp/private-order-market-context.json")
 MAX_MARKET_CONTEXT_AGE_SECONDS = 15 * 60
 MAX_SAME_SNAPSHOT_DELTA_SECONDS = 2
 MAX_RECENT_LAG_MINUTES = 60
+PRE_ENTRY_WINDOWS_MINUTES = (15, 30, 60)
+PRE_ENTRY_BASELINE_TOLERANCE_SECONDS = 10 * 60
 
 
 def parse_time(value: Any) -> datetime | None:
@@ -137,6 +140,207 @@ def stats(rows: list[dict]) -> dict:
     }
 
 
+def finite_number(value: Any, *, positive: bool = False) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(number):
+        return None
+    if positive and number <= 0:
+        return None
+    return number
+
+
+def percent_change(end: Any, start: Any, *, positive: bool = True) -> float | None:
+    a = finite_number(start, positive=positive)
+    b = finite_number(end, positive=positive)
+    if a is None or b is None or a == 0:
+        return None
+    return round((b / a - 1) * 100, 6)
+
+
+def same_pair_series(a: dict, b: dict) -> bool:
+    keys = (
+        "package",
+        "currency",
+        "coin",
+        "mergeCoin",
+        "marketAlgorithm",
+        "relayVersion",
+        "marketUnitSignature",
+    )
+    return all(a.get(key) == b.get(key) for key in keys)
+
+
+def build_pre_entry_context(order_start: datetime | None, eligible_pairs: list[dict]) -> dict:
+    """Describe exact-package public market movement before a real private order.
+
+    This uses only quotes/observations already known before order entry. It is
+    descriptive HIT/MISS calibration evidence and never changes final_signal.
+    """
+    if order_start is None:
+        return {"status": "NO_USABLE_ORDER_TIME", "windows": []}
+
+    paired = [
+        row for row in eligible_pairs
+        if row.get("pairStatus") == "PAIRED"
+        and row["_quote"] <= order_start
+        and row["_observed"] <= order_start
+    ]
+    if not paired:
+        return {"status": "NO_CAUSAL_PAIRED_EXACT_PACKAGE_QUOTES", "windows": []}
+
+    endpoint = paired[-1]
+    endpoint_age = (order_start - endpoint["_quote"]).total_seconds()
+    if endpoint_age > MAX_MARKET_CONTEXT_AGE_SECONDS:
+        return {
+            "status": "NO_FRESH_PAIRED_ENDPOINT",
+            "endpointQuoteAt": endpoint.get("quoteAt"),
+            "endpointAgeSeconds": round(endpoint_age, 3),
+            "windows": [],
+        }
+
+    series = [row for row in paired if same_pair_series(row, endpoint)]
+    windows = []
+    for horizon in PRE_ENTRY_WINDOWS_MINUTES:
+        target = order_start - timedelta(minutes=horizon)
+        candidates = [
+            row for row in series
+            if row["_quote"] <= target
+            and row["_observed"] <= order_start
+        ]
+        if not candidates:
+            windows.append({
+                "horizonMinutes": horizon,
+                "status": "NO_BASELINE_AT_OR_BEFORE_TARGET",
+                "targetAt": iso(target),
+            })
+            continue
+
+        baseline = candidates[-1]
+        distance = (target - baseline["_quote"]).total_seconds()
+        if distance > PRE_ENTRY_BASELINE_TOLERANCE_SECONDS:
+            windows.append({
+                "horizonMinutes": horizon,
+                "status": "BASELINE_TOO_FAR_FROM_TARGET",
+                "targetAt": iso(target),
+                "baselineQuoteAt": baseline.get("quoteAt"),
+                "baselineDistanceSeconds": round(distance, 3),
+            })
+            continue
+
+        work_change = percent_change(endpoint.get("workPerNative"), baseline.get("workPerNative"))
+        ticket_cost_change = None
+        if work_change is not None and work_change > -100:
+            ticket_cost_change = round((1 / (1 + work_change / 100) - 1) * 100, 6)
+
+        start_expected = finite_number(baseline.get("feedExpectedReturnPercent"))
+        end_expected = finite_number(endpoint.get("feedExpectedReturnPercent"))
+        expected_delta = None
+        if start_expected is not None and end_expected is not None:
+            expected_delta = round(end_expected - start_expected, 6)
+
+        windows.append({
+            "horizonMinutes": horizon,
+            "status": "MATCHED",
+            "targetAt": iso(target),
+            "baselineQuoteAt": baseline.get("quoteAt"),
+            "baselineObservedAt": baseline.get("observedAt"),
+            "baselineDistanceSeconds": round(distance, 3),
+            "endpointQuoteAt": endpoint.get("quoteAt"),
+            "endpointObservedAt": endpoint.get("observedAt"),
+            "endpointAgeSeconds": round(endpoint_age, 3),
+            "workPerNativeChangePercent": work_change,
+            "ticketCostPerWorkChangePercent": ticket_cost_change,
+            "marketPriceRawChangePercent": percent_change(endpoint.get("marketPriceRaw"), baseline.get("marketPriceRaw")),
+            "primaryDifficultyChangePercent": percent_change(endpoint.get("primaryDifficulty"), baseline.get("primaryDifficulty")),
+            "mergeDifficultyChangePercent": percent_change(endpoint.get("mergeDifficulty"), baseline.get("mergeDifficulty")),
+            "feedExpectedReturnChangePercentagePoints": expected_delta,
+            "baselineSignal": baseline.get("currentSignal"),
+            "endpointSignal": endpoint.get("currentSignal"),
+            "interpretation": "PRIVATE_REAL_ORDER_PRE_ENTRY_CONTEXT_NOT_CAUSAL_PROOF",
+        })
+
+    return {
+        "status": "AVAILABLE" if any(row.get("status") == "MATCHED" for row in windows) else "NO_MATCHED_WINDOWS",
+        "endpointQuoteAt": endpoint.get("quoteAt"),
+        "endpointObservedAt": endpoint.get("observedAt"),
+        "endpointAgeSeconds": round(endpoint_age, 3),
+        "windows": windows,
+    }
+
+
+def summarize_pre_entry_by_outcome(rows: list[dict]) -> dict:
+    feature_fields = (
+        "workPerNativeChangePercent",
+        "ticketCostPerWorkChangePercent",
+        "marketPriceRawChangePercent",
+        "primaryDifficultyChangePercent",
+        "mergeDifficultyChangePercent",
+        "feedExpectedReturnChangePercentagePoints",
+    )
+    grouped: dict[tuple[str, int, str], list[dict]] = defaultdict(list)
+    for row in rows:
+        outcome = str(row.get("outcome") or "UNKNOWN")
+        package = str(row.get("packageName") or "")
+        context = row.get("entryPreContext") if isinstance(row.get("entryPreContext"), dict) else {}
+        for window in context.get("windows") or []:
+            if not isinstance(window, dict) or window.get("status") != "MATCHED":
+                continue
+            horizon = window.get("horizonMinutes")
+            if not isinstance(horizon, int):
+                continue
+            grouped[(package, horizon, outcome)].append(window)
+
+    by_group = {}
+    package_horizon = defaultdict(dict)
+    for (package, horizon, outcome), items in sorted(grouped.items()):
+        key = f"{package}|{horizon}m|{outcome}"
+        summary = {"matchedOrders": len(items)}
+        for field in feature_fields:
+            values = [
+                float(item[field])
+                for item in items
+                if finite_number(item.get(field)) is not None
+            ]
+            summary[f"median{field[0].upper()}{field[1:]}"] = (
+                round(median(values), 6) if values else None
+            )
+        by_group[key] = summary
+        package_horizon[(package, horizon)][outcome] = summary
+
+    comparisons = {}
+    for (package, horizon), outcomes in sorted(package_horizon.items()):
+        hit_summary = outcomes.get("HIT")
+        miss_summary = outcomes.get("MISS")
+        if not hit_summary or not miss_summary:
+            continue
+        comparison = {
+            "hitOrders": hit_summary["matchedOrders"],
+            "missOrders": miss_summary["matchedOrders"],
+        }
+        for field in feature_fields:
+            metric = f"median{field[0].upper()}{field[1:]}"
+            hit_value = hit_summary.get(metric)
+            miss_value = miss_summary.get(metric)
+            comparison[f"hitMinusMiss{field[0].upper()}{field[1:]}"] = (
+                round(hit_value - miss_value, 6)
+                if isinstance(hit_value, (int, float)) and isinstance(miss_value, (int, float))
+                else None
+            )
+        comparisons[f"{package}|{horizon}m"] = comparison
+
+    return {
+        "role": "PRIVATE_REAL_ORDER_HIT_MISS_DESCRIPTIVE_COMPARISON",
+        "byPackageHorizonOutcome": by_group,
+        "hitMinusMiss": comparisons,
+        "canRaiseSignal": False,
+    }
+
+
 def build(private_report: dict, pair_rows: list[dict], episode_rows: list[dict], protocol: dict) -> dict:
     matches = private_report.get("matches")
     if not isinstance(matches, list):
@@ -190,6 +394,7 @@ def build(private_report: dict, pair_rows: list[dict], episode_rows: list[dict],
                 "entryMarketContextStatus": context_status,
                 "entryMarketContext": None,
                 "entryLagContext": None,
+                "entryPreContext": {"status": "NO_USABLE_ORDER_TIME", "windows": []},
                 "privateEdgeResearchRole": "ENTRY_TIME_DESCRIPTIVE_ONLY",
             })
             continue
@@ -200,6 +405,9 @@ def build(private_report: dict, pair_rows: list[dict], episode_rows: list[dict],
             and pair["_quote"] <= order_start
             and pair["_observed"] <= order_start
         ]
+
+        pre_entry_context = build_pre_entry_context(order_start, eligible_pairs)
+        context_counts[f"PRE_ENTRY_{pre_entry_context['status']}"] += 1
 
         same_snapshot = [
             pair for pair in eligible_pairs
@@ -353,6 +561,7 @@ def build(private_report: dict, pair_rows: list[dict], episode_rows: list[dict],
             "entryMarketContextStatus": context_status,
             "entryMarketContext": market_context,
             "entryLagContext": lag_context,
+            "entryPreContext": pre_entry_context,
             "protocolPackageEligible": package_protocol_eligible,
             "protocolValidationEligible": protocol_eligible,
             "privateEdgeResearchRole": "ENTRY_TIME_DESCRIPTIVE_ONLY",
@@ -377,6 +586,7 @@ def build(private_report: dict, pair_rows: list[dict], episode_rows: list[dict],
     post_registration = [
         row for row in out if row.get("protocolValidationEligible") is True
     ]
+    pre_entry_feature_summary = summarize_pre_entry_by_outcome(out)
 
     return {
         "schemaVersion": 1,
@@ -401,6 +611,14 @@ def build(private_report: dict, pair_rows: list[dict], episode_rows: list[dict],
         "descriptiveByMarketContext": by_context,
         "descriptiveByRegisteredLagExposure": by_lag,
         "postRegistrationProtocolEligible": stats(post_registration),
+        "preEntryFeatureSummary": pre_entry_feature_summary,
+        "preEntrySettings": {
+            "windowsMinutes": list(PRE_ENTRY_WINDOWS_MINUTES),
+            "baselineToleranceSeconds": PRE_ENTRY_BASELINE_TOLERANCE_SECONDS,
+            "requiresFreshPairedEndpoint": True,
+            "exactPackageOnly": True,
+            "quoteAndObservationMustPrecedeOrderEntry": True,
+        },
         "matches": out,
         "verdict": "PRIVATE_DESCRIPTIVE_ENTRY_CONTEXT_ONLY_NO_AUTOMATIC_EDGE_CLAIM",
         "limitations": [
@@ -409,6 +627,7 @@ def build(private_report: dict, pair_rows: list[dict], episode_rows: list[dict],
             "A recorded lag episode near an entry does not prove incremental profitability or causality.",
             "Market PAIR data are public relative statistics and not independently verified executable EasyMining prices.",
             "Detailed order-level data remain ephemeral in /tmp and are not printed, uploaded or committed by the workflow.",
+            "Pre-entry HIT/MISS differences are descriptive and user-selected; small samples and confounding prevent causal or automatic BUY conclusions.",
         ],
     }
 
@@ -467,6 +686,7 @@ def main() -> None:
             "protocolStatusCounts": result["protocolStatusCounts"],
             "lagContextCounts": result["lagContextCounts"],
             "postRegistrationProtocolEligible": result["postRegistrationProtocolEligible"],
+            "preEntryFeatureSummary": result["preEntryFeatureSummary"],
             "verdict": result["verdict"],
         }, indent=2, allow_nan=False))
 

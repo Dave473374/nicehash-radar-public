@@ -273,6 +273,123 @@ class PrivateEntryMarketContextTests(unittest.TestCase):
         self.assertAlmostEqual(overall["realizedReturnMultiple"], 5.0, places=6)
         self.assertAlmostEqual(overall["realizedRoiPercent"], 400.0, places=4)
 
+    def test_pre_entry_windows_use_only_causal_exact_package_pairs(self):
+        early = pair(
+            quote="2026-09-19T23:10:00+00:00",
+            observed="2026-09-19T23:10:01+00:00",
+            package="Palladium M",
+        )
+        early.update({
+            "workPerNative": 1.00e19,
+            "marketPriceRaw": 5.0e-7,
+            "primaryDifficulty": 90_000_000,
+            "mergeDifficulty": 50_000_000,
+            "feedExpectedReturnPercent": 80.0,
+        })
+        middle = pair(
+            quote="2026-09-19T23:40:00+00:00",
+            observed="2026-09-19T23:40:01+00:00",
+            package="Palladium M",
+        )
+        middle.update({
+            "workPerNative": 1.05e19,
+            "marketPriceRaw": 5.5e-7,
+            "primaryDifficulty": 89_000_000,
+            "mergeDifficulty": 45_000_000,
+            "feedExpectedReturnPercent": 82.0,
+        })
+        endpoint = pair(
+            quote="2026-09-20T00:05:00+00:00",
+            observed="2026-09-20T00:05:01+00:00",
+            package="Palladium M",
+            signal="GOOD",
+        )
+        endpoint.update({
+            "workPerNative": 1.10e19,
+            "marketPriceRaw": 6.0e-7,
+            "primaryDifficulty": 88_000_000,
+            "mergeDifficulty": 40_000_000,
+            "feedExpectedReturnPercent": 84.0,
+        })
+        match = private_match(package="Palladium M")
+        result = self.build([match], [early, middle, endpoint])
+        ctx = result["matches"][0]["entryPreContext"]
+        self.assertEqual(ctx["status"], "AVAILABLE")
+        matched = {w["horizonMinutes"]: w for w in ctx["windows"] if w["status"] == "MATCHED"}
+        self.assertIn(30, matched)
+        self.assertIn(60, matched)
+        self.assertAlmostEqual(matched[30]["workPerNativeChangePercent"], (1.10/1.05-1)*100, places=6)
+        self.assertAlmostEqual(matched[60]["mergeDifficultyChangePercent"], (40/50-1)*100, places=6)
+        self.assertEqual(matched[30]["endpointSignal"], "GOOD")
+
+    def test_pre_entry_windows_exclude_future_observation(self):
+        baseline = pair(
+            quote="2026-09-19T23:40:00+00:00",
+            observed="2026-09-20T00:11:00+00:00",
+            package="Palladium M",
+        )
+        endpoint = pair(
+            quote="2026-09-20T00:05:00+00:00",
+            observed="2026-09-20T00:05:01+00:00",
+            package="Palladium M",
+        )
+        result = self.build([private_match(package="Palladium M")], [baseline, endpoint])
+        windows = result["matches"][0]["entryPreContext"]["windows"]
+        self.assertFalse(any(w.get("status") == "MATCHED" for w in windows))
+
+    def test_pre_entry_windows_do_not_substitute_package_size(self):
+        result = self.build(
+            [private_match(package="Palladium L")],
+            [
+                pair(package="Palladium M", quote="2026-09-19T23:40:00+00:00"),
+                pair(package="Palladium M", quote="2026-09-20T00:05:00+00:00"),
+            ],
+        )
+        self.assertEqual(
+            result["matches"][0]["entryPreContext"]["status"],
+            "NO_CAUSAL_PAIRED_EXACT_PACKAGE_QUOTES",
+        )
+
+    def test_hit_minus_miss_pre_entry_summary_is_separate_and_descriptive(self):
+        hit_match = private_match(
+            package="Palladium M",
+            outcome="HIT",
+            start="2026-09-20T00:10:00+00:00",
+            snapshot="2026-09-20T00:05:00+00:00",
+        )
+        miss_match = private_match(
+            package="Palladium M",
+            outcome="MISS",
+            start="2026-09-20T01:10:00+00:00",
+            snapshot="2026-09-20T01:05:00+00:00",
+        )
+        pairs = []
+        for quote, work, merge in (
+            ("2026-09-19T23:40:00+00:00", 1.00e19, 50_000_000),
+            ("2026-09-20T00:05:00+00:00", 1.10e19, 40_000_000),
+            ("2026-09-20T00:40:00+00:00", 1.00e19, 50_000_000),
+            ("2026-09-20T01:05:00+00:00", 1.02e19, 49_000_000),
+        ):
+            p = pair(
+                package="Palladium M",
+                quote=quote,
+                observed=quote,
+            )
+            p.update({
+                "workPerNative": work,
+                "mergeDifficulty": merge,
+                "marketPriceRaw": 6.0e-7,
+                "primaryDifficulty": 88_000_000,
+            })
+            pairs.append(p)
+        result = self.build([hit_match, miss_match], pairs)
+        summary = result["preEntryFeatureSummary"]
+        comp = summary["hitMinusMiss"]["Palladium M|30m"]
+        self.assertEqual(comp["hitOrders"], 1)
+        self.assertEqual(comp["missOrders"], 1)
+        self.assertLess(comp["hitMinusMissMergeDifficultyChangePercent"], 0)
+        self.assertFalse(summary["canRaiseSignal"])
+
     def test_output_policy_is_non_production_and_ephemeral(self):
         result = self.build([private_match()], [pair()])
         self.assertFalse(result["privateDataPersistedToRepository"])
