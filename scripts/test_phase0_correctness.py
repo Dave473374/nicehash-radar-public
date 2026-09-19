@@ -318,6 +318,8 @@ with tempfile.TemporaryDirectory() as directory:
     exact = package(name="Exact")
     warning = package(name="Warning")
     critical = package(name="Critical")
+    for item in (exact, warning, critical):
+        item["duration_seconds"] = 1
     warning["primary_chain"]["expected_blocks"] = 1.10
     critical["primary_chain"]["expected_blocks"] = 1.20
 
