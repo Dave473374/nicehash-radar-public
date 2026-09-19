@@ -9,6 +9,9 @@ from collections import Counter
 from datetime import datetime, timezone
 import json
 import math
+import hashlib
+import re
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -124,9 +127,11 @@ def verify_mempool(event, opener, now):
     coin = str(event.get("coin") or "").upper()
     base = MEMPOOL_BASES[coin]
     result = common(event, now)
-    height = int(event.get("blockHeight"))
+    height = strict_uint(event.get("blockHeight"))
+    if height is None or hash256(event.get("blockHash")) is None:
+        return {**result, "status": "INVALID_BLOCK_IDENTITY", "explorer": None}
     block_hash = get(opener, base, f"/api/block-height/{height}", False).strip()
-    if len(block_hash) != 64:
+    if hash256(block_hash) is None:
         raise ValueError("Invalid block hash")
     expected = str(event.get("blockHash") or "").lower().strip()
     if len(expected) == 64 and expected != block_hash.lower():
@@ -136,24 +141,22 @@ def verify_mempool(event, opener, now):
     txs = get(opener, base, f"/api/block/{block_hash}/txs/0")
     if not isinstance(block, dict) or not isinstance(txs, list) or not txs:
         raise ValueError("Unexpected mempool-style schema")
+    if strict_uint(block.get("height")) != height or hash256(block.get("id")) != block_hash.lower():
+        return {**result, "status": "CONFLICT_BLOCK_METADATA", "explorer": base}
     tx0 = txs[0]
+    if not isinstance(tx0, dict):
+        raise ValueError("Coinbase transaction missing")
     vin, vout = tx0.get("vin"), tx0.get("vout")
     if not isinstance(vin, list) or not vin or not isinstance(vin[0], dict):
         raise ValueError("Coinbase input missing")
+    if len(vin) != 1 or vin[0].get("is_coinbase") is not True:
+        raise ValueError("First transaction is not an explicit coinbase")
     tag_class, tag = classify_tag(vin[0].get("scriptsig"))
     reward_sats = None
-    if isinstance(vout, list):
-        vals = [x.get("value") for x in vout if isinstance(x, dict)]
-        if vals and all(finite(x) for x in vals):
-            reward_sats = sum(float(x) for x in vals)
-    reward_native = reward_sats / 100_000_000 if reward_sats is not None else None
-    payout_ratio = None
-    try:
-        payout = float(event.get("payoutReward"))
-        if math.isfinite(payout) and payout >= 0 and reward_native and reward_native > 0:
-            payout_ratio = payout / reward_native * 100
-    except (TypeError, ValueError):
-        pass
+    if isinstance(vout, list) and vout and all(isinstance(x, dict) for x in vout):
+        vals = [strict_uint(x.get("value")) for x in vout]
+        if all(x is not None for x in vals):
+            reward_sats = sum(vals)
 
     if tag_class == "NICEHASH_TAG":
         status = "VERIFIED_ON_CHAIN_NICEHASH_TAG"
@@ -175,9 +178,134 @@ def verify_mempool(event, opener, now):
         "onchainDifficulty": block.get("difficulty"),
         "coinbaseTagClass": tag_class,
         "coinbaseTag": tag,
-        "coinbaseRewardNative": round(reward_native, 12) if reward_native is not None else None,
-        "payoutToCoinbasePercent": round(payout_ratio, 6) if payout_ratio is not None else None,
+        **reward_fields(event, reward_sats),
+        "onchainBlockHeight": height,
+        "personalOrderProven": False,
     }
+
+
+
+def strict_uint(value):
+    """Atomic amounts/heights: never truncate floats or infer units by size."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if 0 <= value <= 2**63-1 else None
+    if isinstance(value, str) and re.fullmatch(r"[0-9]{1,19}", value):
+        number = int(value)
+        return number if number <= 2**63-1 else None
+    return None
+
+
+def hash256(value):
+    return value.lower() if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value) else None
+
+
+def native_payout(event):
+    # This contract is scoped to the normalized public singleReward BTC/BCH
+    # stream. A decimal native-coin string or unknown provenance stays unknown.
+    if (event.get("source") != "NICEHASH_PUBLIC_SINGLE_REWARD"
+            or event.get("coin") not in {"BTC", "BCH"}):
+        return None
+    return strict_uint(event.get("payoutReward"))
+
+
+def reward_fields(event, reward_sats):
+    payout_sats = native_payout(event)
+    valid_reward = strict_uint(reward_sats)
+    ratio = (100.0 * payout_sats / valid_reward
+             if payout_sats is not None and valid_reward not in (None, 0) else None)
+    return {
+        "coinbaseRewardAtomic": valid_reward,
+        "coinbaseRewardNative": valid_reward / 100_000_000 if valid_reward is not None else None,
+        "coinbaseRewardUnit": "SATOSHI_1E8_PER_COIN" if valid_reward is not None else "UNKNOWN",
+        "niceHashPayoutAtomic": payout_sats,
+        "niceHashPayoutNative": payout_sats / 100_000_000 if payout_sats is not None else None,
+        "niceHashPayoutUnit": "PUBLIC_SINGLE_REWARD_ATOMIC_1E8" if payout_sats is not None else "UNKNOWN",
+        "payoutToCoinbasePercent": round(ratio, 8) if ratio is not None else None,
+        "payoutExceedsCoinbase": payout_sats > valid_reward if payout_sats is not None and valid_reward is not None else None,
+        "payoutRatioIsFeeSchedule": False,
+    }
+
+
+def verify_bch_blockchair(event, opener, now):
+    """One public documented block dashboard request; never use guessed_miner as tag proof."""
+    result = common(event, now)
+    height, expected = strict_uint(event.get("blockHeight")), hash256(event.get("blockHash"))
+    if height is None or expected is None:
+        return {**result, "status": "INVALID_BLOCK_IDENTITY", "explorer": None}
+    path = f"/bitcoin-cash/dashboards/block/{height}?limit=1"
+    payload = get(opener, ZEC_BASE, path)
+    if not isinstance(payload, dict) or not isinstance(payload.get("context"), dict):
+        raise ValueError("Blockchair context missing")
+    if strict_uint(payload["context"].get("code")) != 200:
+        raise ValueError("Blockchair context did not confirm success")
+    data = payload.get("data")
+    if not isinstance(data, dict) or set(data) != {str(height)}:
+        raise ValueError("BCH requested height missing or ambiguous")
+    entry = data[str(height)]
+    block = entry.get("block") if isinstance(entry, dict) else None
+    if not isinstance(block, dict):
+        raise ValueError("BCH block object missing")
+    on_hash, on_height = hash256(block.get("hash")), strict_uint(block.get("id"))
+    if on_hash is None or on_height is None:
+        raise ValueError("BCH explorer hash/height missing")
+    if on_height != height or on_hash != expected:
+        return {**result, "status": "CONFLICT_BLOCK_HASH" if on_hash != expected else "CONFLICT_BLOCK_HEIGHT",
+                "explorer": ZEC_BASE, "onchainBlockHash": on_hash, "onchainBlockHeight": on_height}
+    if block.get("is_orphan") is True or block.get("main_chain") is False:
+        return {**result, "status": "CONFLICT_ORPHAN_BLOCK", "explorer": ZEC_BASE,
+                "onchainBlockHash": on_hash, "onchainBlockHeight": on_height}
+    # Blockchair specifies UTC for this time format. No browser/display-time inference.
+    try:
+        at = datetime.strptime(block["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("BCH timestamp missing or invalid") from None
+    difficulty = block.get("difficulty")
+    difficulty = difficulty if finite(difficulty) and difficulty > 0 else None
+    script = block.get("coinbase_data_hex")
+    tag_class, tag = classify_tag(script)
+    if tag_class == "NICEHASH_TAG":
+        status, strength = "VERIFIED_ON_CHAIN_NICEHASH_TAG", "BLOCK_HEIGHT_HASH_AND_NICEHASH_TAG"
+    elif tag_class in {"NICEHASH_SOLO_TAG", "NICEHASH_MINING_TAG"}:
+        status, strength = "VERIFIED_ON_CHAIN_OTHER_NICEHASH_TAG", "BLOCK_HEIGHT_HASH_AND_OTHER_NICEHASH_TAG"
+    else:
+        status, strength = "VERIFIED_ON_CHAIN_BLOCK_MATCH", "BLOCK_HEIGHT_HASH_TAG_UNCONFIRMED"
+    return {
+        **result, "status": status, "verificationStrength": strength,
+        "explorer": ZEC_BASE, "explorerPath": path, "onchainNetwork": "BCH_MAINNET",
+        "onchainBlockHash": on_hash, "onchainBlockHeight": on_height,
+        "onchainTimestamp": int(at.timestamp()), "onchainDifficulty": difficulty,
+        "coinbaseTagClass": tag_class, "coinbaseTag": tag,
+        "coinbaseTagEvidenceField": "coinbase_data_hex" if tag else None,
+        # Preserve only a digest of the public coinbase script, not arbitrary text.
+        "coinbaseScriptSha256": hashlib.sha256(bytes.fromhex(script)).hexdigest()
+            if isinstance(script, str) and len(script) <= 2000 and re.fullmatch(r"(?:[0-9a-fA-F]{2})+", script) else None,
+        **reward_fields(event, block.get("reward")),
+        "verificationScope": "INDEPENDENT_EXPLORER_MATCH_NOT_FULL_NODE_CONSENSUS_VALIDATION",
+        "packageAttributionSource": "NICEHASH_PUBLIC_SINGLE_REWARD",
+        "personalOrderProven": False,
+    }
+
+
+def verify_bch(event, opener, now):
+    """Bounded fallback for availability/schema errors, NEVER for an identity conflict."""
+    if strict_uint(event.get("blockHeight")) is None or hash256(event.get("blockHash")) is None:
+        return {**common(event, now), "status": "INVALID_BLOCK_IDENTITY", "explorer": None}
+    attempts = []
+    for base, verifier in ((ZEC_BASE, verify_bch_blockchair), (MEMPOOL_BASES["BCH"], verify_mempool)):
+        try:
+            result = verifier(event, opener, now)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, TypeError, RuntimeError) as exc:
+            attempts.append({"explorer": base, "status": "UNAVAILABLE_OR_INVALID_SCHEMA", "errorType": type(exc).__name__})
+            continue
+        attempts.append({"explorer": base, "status": result["status"]})
+        result.update(bchVerifierVersion=1, providerAttempts=attempts, fallbackUsed=len(attempts) > 1)
+        return result
+    return {**common(event, now), "status": "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH", "explorer": None,
+            "bchVerifierVersion": 1, "providerAttempts": attempts, "fallbackUsed": True,
+            "errorType": "AllBchProvidersUnavailable"}
+
 
 
 def first_blockchair_block(payload):
@@ -260,6 +388,8 @@ def verify_event(event, opener=None, now=None):
         return {**result, "status": "UNSUPPORTED_COIN", "explorer": None}
     opener = opener or urllib.request.build_opener(NoRedirect())
     try:
+        if coin == "BCH":
+            return verify_bch(event, opener, now)
         if coin in MEMPOOL_BASES:
             return verify_mempool(event, opener, now)
         if coin == "ZEC":
@@ -283,6 +413,8 @@ def load_jsonl(path):
 
 
 def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, now=None):
+    if len({Path(x).resolve() for x in (input_path, ledger_path, report_path)}) != 3:
+        raise ValueError("Source, ledger and report must be distinct files")
     if max_new < 1 or max_new > 100:
         raise ValueError("max_new must be 1..100")
     now = now or utc_now()
@@ -319,7 +451,16 @@ def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, 
                 continue
             event = queues[coin][pos]
             positions[coin] += 1
-            latest[source_event_id(event)] = verifier(event, now=now)
+            eid = source_event_id(event)
+            previous = latest.get(eid)
+            current = verifier(event, now=now)
+            if previous is not None:
+                history = list(previous.get("verificationAttemptHistory") or [])
+                summary = {key: previous.get(key) for key in ("verifiedAt", "status", "explorer", "errorType")}
+                if summary not in history:
+                    history.append(summary)
+                current["verificationAttemptHistory"] = history
+            latest[eid] = current
             processed += 1
             progressed = True
         if not progressed:
@@ -353,6 +494,9 @@ def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, 
         "verifiedOnchainCount": verified,
         "verifiedByCoin": dict(by_coin),
         "statusCounts": dict(counts),
+        "verificationHealth": "DEGRADED" if counts.get("SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH") else "COMPLETED_NO_SOURCE_ERRORS",
+        "bchProviderOrder": [ZEC_BASE, MEMPOOL_BASES["BCH"]],
+        "bchPayoutRatioIsFeeSchedule": False,
         "supportedCoins": sorted(SUPPORTED),
         "packageCoverageIntent": {
             "Gold": "BTC",

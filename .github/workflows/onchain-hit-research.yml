@@ -4,6 +4,13 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '23 */6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - scripts/verify_onchain_hits.py
+      - tests/test_bch_public_fallback.py
+      - docs/bch-verification-repair.md
+      - .github/workflows/onchain-hit-research.yml
   pull_request:
     branches: [main]
     paths:
@@ -12,7 +19,9 @@ on:
       - scripts/verify_onchain_hits.py
       - tests/test_public_hit_backfill.py
       - tests/test_onchain_hit_verification.py
+      - tests/test_bch_public_fallback.py
       - docs/onchain-hit-verification.md
+      - docs/bch-verification-repair.md
       - .github/workflows/onchain-hit-research.yml
 
 concurrency:
@@ -39,7 +48,28 @@ jobs:
           python3 scripts/check_private_api_policy.py
       - name: Unit tests without network
         run: |
-          python3 -m unittest tests.test_public_hit_backfill tests.test_onchain_hit_verification -v
+          python3 -m unittest tests.test_public_hit_backfill tests.test_onchain_hit_verification tests.test_bch_public_fallback -v
+          python3 scripts/test_phase0_correctness.py
+      - name: Real BCH regression against a public archived event
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          sys.path.insert(0, 'scripts')
+          import verify_onchain_hits as v
+          rows = v.load_jsonl(v.DEFAULT_INPUT)
+          sample = next(r for r in rows if r.get('coin') == 'BCH' and r.get('blockHeight') == 969090)
+          assert sample['blockHash'] == '000000000000000000661729e061860fc71d945b3adc7b91ebb211dcdf3abc8e'
+          assert v.strict_uint(sample.get('payoutReward')) == 303137009
+          result = v.verify_event(sample)
+          safe = {k: result.get(k) for k in ('status', 'explorer', 'onchainBlockHeight', 'onchainBlockHash', 'coinbaseTag', 'coinbaseRewardAtomic', 'niceHashPayoutNative', 'payoutToCoinbasePercent', 'providerAttempts')}
+          print(json.dumps(safe, sort_keys=True))
+          assert result.get('status') == 'VERIFIED_ON_CHAIN_NICEHASH_TAG', 'BCH reference not independently verified'
+          assert result.get('onchainBlockHash') == sample['blockHash']
+          assert result.get('coinbaseRewardAtomic') == 312512380
+          assert result.get('niceHashPayoutNative') == 3.03137009
+          assert abs(result.get('payoutToCoinbasePercent') - 97) < 0.000001
+          print('LIVE BCH 969090: HEIGHT + HASH + COINBASE TAG + ATOMIC REWARD OK')
+          PY
       - name: Small public-network smoke
         run: |
           python3 scripts/collect_realized_blocks.py --pages 2 --output /tmp/realized-blocks.jsonl
@@ -71,10 +101,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Recheck safety guards
+      - name: Recheck safety guards and checked-out code
         run: |
           python3 scripts/check_forbidden_admin_access.py
           python3 scripts/check_private_api_policy.py
+          python3 -m unittest tests.test_public_hit_backfill tests.test_onchain_hit_verification tests.test_bch_public_fallback -v
       - name: Deep public success-event snapshot and balanced on-chain verification
         run: |
           python3 scripts/collect_realized_blocks.py --pages 50 --output /tmp/deep-realized-blocks.jsonl
