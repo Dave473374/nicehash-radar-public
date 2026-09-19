@@ -273,6 +273,34 @@ def build_pre_entry_context(order_start: datetime | None, eligible_pairs: list[d
     }
 
 
+def pre_entry_coverage_status(
+    match: dict,
+    order_start: datetime | None,
+    package_pairs: list[dict],
+    eligible_pairs: list[dict],
+    pre_entry_context: dict,
+) -> str:
+    if order_start is None:
+        return "NO_USABLE_ORDER_TIME"
+    if not package_pairs:
+        return "NO_EXACT_PACKAGE_SERIES"
+    matching_series = [pair for pair in package_pairs if coin_signature_match(match, pair)]
+    if not matching_series:
+        return "NO_MATCHING_COIN_CURRENCY_SERIES"
+    first_quote = matching_series[0]["_quote"]
+    last_quote = matching_series[-1]["_quote"]
+    if order_start < first_quote:
+        return "ORDER_PREDATES_PUBLIC_PAIR_HISTORY"
+    if order_start > last_quote + timedelta(seconds=MAX_MARKET_CONTEXT_AGE_SECONDS):
+        return "ORDER_AFTER_AVAILABLE_PAIR_HISTORY"
+    if not eligible_pairs:
+        return "NO_CAUSAL_MATCHING_QUOTE"
+    status = str(pre_entry_context.get("status") or "UNKNOWN")
+    if status == "AVAILABLE":
+        return "PRE_ENTRY_WINDOWS_AVAILABLE"
+    return status
+
+
 def summarize_pre_entry_by_outcome(rows: list[dict]) -> dict:
     feature_fields = (
         "workPerNativeChangePercent",
@@ -283,9 +311,14 @@ def summarize_pre_entry_by_outcome(rows: list[dict]) -> dict:
         "feedExpectedReturnChangePercentagePoints",
     )
     grouped: dict[tuple[str, int, str], list[dict]] = defaultdict(list)
+    coverage = Counter()
+    orders_by_outcome = Counter()
     for row in rows:
         outcome = str(row.get("outcome") or "UNKNOWN")
         package = str(row.get("packageName") or "")
+        orders_by_outcome[(package, outcome)] += 1
+        coverage_status = str(row.get("entryPreCoverageStatus") or "UNKNOWN")
+        coverage[(package, outcome, coverage_status)] += 1
         context = row.get("entryPreContext") if isinstance(row.get("entryPreContext"), dict) else {}
         for window in context.get("windows") or []:
             if not isinstance(window, dict) or window.get("status") != "MATCHED":
@@ -335,6 +368,14 @@ def summarize_pre_entry_by_outcome(rows: list[dict]) -> dict:
 
     return {
         "role": "PRIVATE_REAL_ORDER_HIT_MISS_DESCRIPTIVE_COMPARISON",
+        "ordersByPackageOutcome": {
+            f"{package}|{outcome}": count
+            for (package, outcome), count in sorted(orders_by_outcome.items())
+        },
+        "coverageByPackageOutcomeStatus": {
+            f"{package}|{outcome}|{status}": count
+            for (package, outcome, status), count in sorted(coverage.items())
+        },
         "byPackageHorizonOutcome": by_group,
         "hitMinusMiss": comparisons,
         "canRaiseSignal": False,
@@ -395,18 +436,27 @@ def build(private_report: dict, pair_rows: list[dict], episode_rows: list[dict],
                 "entryMarketContext": None,
                 "entryLagContext": None,
                 "entryPreContext": {"status": "NO_USABLE_ORDER_TIME", "windows": []},
+                "entryPreCoverageStatus": "NO_USABLE_ORDER_TIME",
                 "privateEdgeResearchRole": "ENTRY_TIME_DESCRIPTIVE_ONLY",
             })
             continue
 
+        package_pairs = pairs_by_package.get(package, [])
         eligible_pairs = [
-            pair for pair in pairs_by_package.get(package, [])
+            pair for pair in package_pairs
             if coin_signature_match(match, pair)
             and pair["_quote"] <= order_start
             and pair["_observed"] <= order_start
         ]
 
         pre_entry_context = build_pre_entry_context(order_start, eligible_pairs)
+        pre_entry_coverage = pre_entry_coverage_status(
+            match,
+            order_start,
+            package_pairs,
+            eligible_pairs,
+            pre_entry_context,
+        )
         context_counts[f"PRE_ENTRY_{pre_entry_context['status']}"] += 1
 
         same_snapshot = [
@@ -562,6 +612,7 @@ def build(private_report: dict, pair_rows: list[dict], episode_rows: list[dict],
             "entryMarketContext": market_context,
             "entryLagContext": lag_context,
             "entryPreContext": pre_entry_context,
+            "entryPreCoverageStatus": pre_entry_coverage,
             "protocolPackageEligible": package_protocol_eligible,
             "protocolValidationEligible": protocol_eligible,
             "privateEdgeResearchRole": "ENTRY_TIME_DESCRIPTIVE_ONLY",
