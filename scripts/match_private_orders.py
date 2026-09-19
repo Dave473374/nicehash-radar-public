@@ -157,14 +157,14 @@ snapshot_points.sort(key=lambda item: item[0])
 def find_match(order):
     order_start = parse_ts(order.get("startTs"))
     if order_start is None:
-        return None, "INVALID_START_TIME"
+        return None, "INVALID_START_TIME", {}
 
     package_name = order.get("packageName")
     order_coin = order.get("soloMiningCoin")
     order_currency = str(order.get("currencyMarket") or "").upper()
 
     if not package_name or not order_coin or not order_currency:
-        return None, "MISSING_MATCH_KEY"
+        return None, "MISSING_MATCH_KEY", {}
 
     past = [
         (ts, snapshot)
@@ -173,12 +173,12 @@ def find_match(order):
     ]
     if not past:
         if snapshot_points and snapshot_points[0][0] > order_start:
-            return None, "ORDER_PREDATES_RADAR_HISTORY"
-        return None, "NO_RADAR_HISTORY_BEFORE_ENTRY"
+            return None, "ORDER_PREDATES_RADAR_HISTORY", {}
+        return None, "NO_RADAR_HISTORY_BEFORE_ENTRY", {}
 
     latest_past_ts = past[-1][0]
     if (order_start - latest_past_ts).total_seconds() > MAX_ENTRY_SNAPSHOT_AGE_SECONDS:
-        return None, "NO_FRESH_RADAR_SNAPSHOT"
+        return None, "NO_FRESH_RADAR_SNAPSHOT", {}
 
     candidates = [
         (ts, snapshot)
@@ -190,6 +190,7 @@ def find_match(order):
 
     saw_package_name = False
     saw_package_coin = False
+    radar_currencies = set()
     for ts, snapshot in candidates:
         for package in (snapshot.get("feed", {}).get("packages") or []):
             package_coin = (package.get("primary_chain") or {}).get("currency")
@@ -204,6 +205,7 @@ def find_match(order):
                 continue
             saw_package_coin = True
             if package_currency != order_currency:
+                radar_currencies.add(package_currency or "MISSING")
                 continue
 
             outcome = order_outcome(order)
@@ -267,22 +269,26 @@ def find_match(order):
                 "qualityVs7dPercent": (
                     package.get("history_trend") or {}
                 ).get("expected_blocks_per_btc_vs_7d_percent"),
-            }, "MATCHED"
+            }, "MATCHED", {}
 
     if not saw_package_name:
-        return None, "FRESH_RADAR_NO_EXACT_PACKAGE"
+        return None, "FRESH_RADAR_NO_EXACT_PACKAGE", {}
     if not saw_package_coin:
-        return None, "FRESH_RADAR_PRIMARY_COIN_MISMATCH"
-    return None, "FRESH_RADAR_CURRENCY_MISMATCH"
+        return None, "FRESH_RADAR_PRIMARY_COIN_MISMATCH", {}
+    return None, "FRESH_RADAR_CURRENCY_MISMATCH", {
+        "orderCurrency": order_currency,
+        "radarCurrencies": sorted(radar_currencies) or ["MISSING"],
+    }
 
 
 matches = []
 skip_reasons = {}
 skip_reasons_by_package = {}
 skip_reasons_by_package_outcome = {}
+currency_mismatch_by_package_outcome = {}
 
 for order in orders:
-    match, reason = find_match(order)
+    match, reason, diagnostic = find_match(order)
     if match is None:
         skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
         package_name = str(order.get("packageName") or "UNKNOWN")
@@ -290,10 +296,20 @@ for order in orders:
         skip_reasons_by_package[package_key] = (
             skip_reasons_by_package.get(package_key, 0) + 1
         )
-        outcome_key = f"{package_name}|{order_outcome(order)}|{reason}"
+        outcome = order_outcome(order)
+        outcome_key = f"{package_name}|{outcome}|{reason}"
         skip_reasons_by_package_outcome[outcome_key] = (
             skip_reasons_by_package_outcome.get(outcome_key, 0) + 1
         )
+        if reason == "FRESH_RADAR_CURRENCY_MISMATCH":
+            order_currency = str(diagnostic.get("orderCurrency") or "MISSING")
+            radar_currencies = ",".join(diagnostic.get("radarCurrencies") or ["MISSING"])
+            currency_key = (
+                f"{package_name}|{outcome}|ORDER_{order_currency}|RADAR_{radar_currencies}"
+            )
+            currency_mismatch_by_package_outcome[currency_key] = (
+                currency_mismatch_by_package_outcome.get(currency_key, 0) + 1
+            )
         continue
 
     if match["roiAvailable"]:
@@ -399,6 +415,7 @@ result = {
     "skipReasons": skip_reasons,
     "skipReasonsByPackage": skip_reasons_by_package,
     "skipReasonsByPackageOutcome": skip_reasons_by_package_outcome,
+    "currencyMismatchByPackageOutcome": currency_mismatch_by_package_outcome,
     "overall": overall,
     "signalStats": signal_stats,
     "matches": matches,
