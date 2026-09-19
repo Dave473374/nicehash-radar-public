@@ -1,16 +1,123 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime
 
 PRIVATE_ORDERS = Path("/tmp/nicehash-completed-orders.json")
 RADAR_HISTORY = Path("calibration/radar-snapshots.jsonl")
 OUTPUT = Path("/tmp/private-order-matches.json")
 
-MAX_SNAPSHOT_AGE_SECONDS = 7200
+# Entry calibration must use data that was actually fresh at order time.
+MAX_ENTRY_SNAPSHOT_AGE_SECONDS = 15 * 60
 
-parse_ts = lambda x: datetime.fromisoformat(str(x).replace("Z", "+00:00")) if x else None
+SIGNALS = ["STRONG BUY", "BUY NOW", "GOOD", "WAIT", "NO BUY"]
 
-to_float = lambda x: float(x) if x not in (None, "") else 0.0
+
+def parse_ts(value):
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
+def to_float(value):
+    try:
+        if value in (None, ""):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def snapshot_feed_time(snapshot):
+    feed = snapshot.get("feed") or {}
+    for value in (
+        snapshot.get("feed_generated_at"),
+        feed.get("checked_at"),
+        feed.get("generated_at"),
+        snapshot.get("collected_at"),
+    ):
+        ts = parse_ts(value)
+        if ts is not None:
+            return ts
+    return None
+
+
+def order_outcome(order):
+    value = order.get("isReward")
+    if value is True:
+        return "HIT"
+    if value is False:
+        return "MISS"
+    return "UNKNOWN"
+
+
+def realized_return_btc(order, outcome):
+    rewards = order.get("soloReward") or []
+    values = []
+
+    for reward in rewards:
+        if not isinstance(reward, dict):
+            continue
+        value = to_float(reward.get("payoutRewardBtc"))
+        if value is not None:
+            values.append(value)
+
+    if values:
+        return sum(values), True
+
+    # A completed explicit MISS establishes a zero payout.
+    if outcome == "MISS":
+        return 0.0, True
+
+    # For HIT/UNKNOWN, missing payout fields must not be coerced to zero.
+    return None, False
+
+
+def actual_native_cost(order):
+    # An explicit zero is ambiguous (e.g. cancellation/refund semantics) and
+    # must not be silently replaced with nominal package price.
+    if "payedAmount" in order and order.get("payedAmount") not in (None, ""):
+        paid = to_float(order.get("payedAmount"))
+        if paid is not None and paid > 0:
+            return paid, "PAYED_AMOUNT"
+        return None, "PAYED_AMOUNT_NONPOSITIVE"
+
+    package_price = to_float(order.get("packagePrice"))
+    if package_price is not None and package_price > 0:
+        return package_price, "PACKAGE_PRICE_FALLBACK"
+
+    return None, "UNAVAILABLE"
+
+
+def cost_btc_equivalent(order, package):
+    native_cost, source = actual_native_cost(order)
+    currency = str(order.get("currencyMarket") or "").upper()
+
+    if native_cost is None:
+        return native_cost, None, source
+
+    if currency == "BTC":
+        return native_cost, native_cost, source
+
+    if currency == "USDT":
+        native_quote = to_float(package.get("price_native"))
+        btc_quote = to_float(package.get("price_btc_equiv"))
+        if (
+            native_quote is None
+            or native_quote <= 0
+            or btc_quote is None
+            or btc_quote <= 0
+        ):
+            return native_cost, None, source + "_NO_CONVERSION"
+        return native_cost, native_cost * btc_quote / native_quote, source
+
+    return native_cost, None, source + "_UNSUPPORTED_CURRENCY"
+
 
 orders = json.loads(
     PRIVATE_ORDERS.read_text(encoding="utf-8")
@@ -22,259 +129,247 @@ snapshots = [
     if line.strip()
 ]
 
-snapshot_points = [
-    (parse_ts(s.get("collected_at")), s)
-    for s in snapshots
-    if parse_ts(s.get("collected_at")) is not None
-]
+snapshot_points = []
+for snapshot in snapshots:
+    ts = snapshot_feed_time(snapshot)
+    if ts is not None:
+        snapshot_points.append((ts, snapshot))
 
-make_match = lambda order: next(
-    (
-        {
-            "orderStartTs": order.get("startTs"),
-            "orderEndTs": order.get("endTs"),
-            "packageName": order.get("packageName"),
-            "coin": order.get("soloMiningCoin"),
+snapshot_points.sort(key=lambda item: item[0])
 
-            "packagePriceBtc": to_float(order.get("packagePrice")),
-            "actualCostBtc": (
-                to_float(order.get("payedAmount"))
-                if to_float(order.get("payedAmount")) > 0
-                else to_float(order.get("packagePrice"))
-            ),
 
-            "realizedReturnBtc": sum(
-                to_float(reward.get("payoutRewardBtc"))
-                for reward in (order.get("soloReward") or [])
-                if isinstance(reward, dict)
-            ),
+def find_match(order):
+    order_start = parse_ts(order.get("startTs"))
+    if order_start is None:
+        return None, "INVALID_START_TIME"
 
-            "closeToRewardPct": order.get("soloMiningSharesMaxPercent"),
-            "hadReward": bool(order.get("isReward")),
+    package_name = order.get("packageName")
+    order_coin = order.get("soloMiningCoin")
+    order_currency = str(order.get("currencyMarket") or "").upper()
 
-            "snapshotCollectedAt": snap.get("collected_at"),
-            "snapshotAgeMinutes": round(
-                (parse_ts(order.get("startTs")) - ts).total_seconds() / 60,
-                2
-            ),
+    if not package_name or not order_coin or not order_currency:
+        return None, "MISSING_MATCH_KEY"
 
-            "radarPriceBtc": package.get("price_btc"),
-            "miningSignal": package.get("mining_signal"),
-            "economicSignal": package.get("economic_signal"),
-            "finalSignal": package.get("final_signal"),
+    candidates = [
+        (ts, snapshot)
+        for ts, snapshot in snapshot_points
+        if ts <= order_start
+        and (order_start - ts).total_seconds()
+        <= MAX_ENTRY_SNAPSHOT_AGE_SECONDS
+    ]
+    candidates.sort(key=lambda item: item[0], reverse=True)
 
-            "expectedReturnPercent": (
-                package.get("profitability") or {}
-            ).get("expected_return_percent"),
+    for ts, snapshot in candidates:
+        for package in (snapshot.get("feed", {}).get("packages") or []):
+            package_coin = (package.get("primary_chain") or {}).get("currency")
+            package_currency = str(
+                package.get("currency_market") or ""
+            ).upper()
 
-            "qualityVs24hPercent": (
-                package.get("history_trend") or {}
-            ).get("expected_blocks_per_btc_vs_24h_percent")
-        }
+            if package.get("name") != package_name:
+                continue
+            if package_coin != order_coin:
+                continue
+            if package_currency != order_currency:
+                continue
 
-        for ts, snap in sorted(
-            [
-                (ts, snap)
-                for ts, snap in snapshot_points
-                if ts <= parse_ts(order.get("startTs"))
-                and (
-                    parse_ts(order.get("startTs")) - ts
-                ).total_seconds() <= MAX_SNAPSHOT_AGE_SECONDS
-            ],
-            key=lambda x: x[0],
-            reverse=True
+            outcome = order_outcome(order)
+            return_btc, return_available = realized_return_btc(
+                order,
+                outcome,
+            )
+            native_cost, cost_btc, cost_source = cost_btc_equivalent(
+                order,
+                package,
+            )
+
+            roi_available = bool(
+                outcome in {"HIT", "MISS"}
+                and cost_btc is not None
+                and cost_btc > 0
+                and return_available
+                and return_btc is not None
+            )
+
+            return {
+                "orderStartTs": order.get("startTs"),
+                "orderEndTs": order.get("endTs"),
+                "packageName": package_name,
+                "coin": order_coin,
+                "mergeCoin": order.get("soloMiningMergeCoin"),
+                "currencyMarket": order_currency,
+                "packagePriceNative": to_float(order.get("packagePrice")),
+                "actualCostNative": native_cost,
+                "actualCostBtcEquivalent": cost_btc,
+                "costSource": cost_source,
+                "realizedReturnBtc": return_btc if return_available else None,
+                "roiAvailable": roi_available,
+                "outcome": outcome,
+                "hadReward": (
+                    True if outcome == "HIT"
+                    else False if outcome == "MISS"
+                    else None
+                ),
+                "closeToRewardPct": order.get(
+                    "soloMiningSharesMaxPercent"
+                ),
+                "snapshotCollectedAt": snapshot.get("collected_at"),
+                "snapshotFeedTime": ts.isoformat(),
+                "snapshotAgeMinutes": round(
+                    (order_start - ts).total_seconds() / 60,
+                    2,
+                ),
+                "radarPriceBtcEquivalent": package.get(
+                    "price_btc_equiv"
+                ),
+                "miningSignal": package.get("mining_signal"),
+                "economicSignal": package.get("economic_signal"),
+                "finalSignal": package.get("final_signal"),
+                "expectedReturnPercent": (
+                    package.get("profitability") or {}
+                ).get("expected_return_percent"),
+                "qualityVs24hPercent": (
+                    package.get("history_trend") or {}
+                ).get("expected_blocks_per_btc_vs_24h_percent"),
+                "qualityVs7dPercent": (
+                    package.get("history_trend") or {}
+                ).get("expected_blocks_per_btc_vs_7d_percent"),
+            }, "MATCHED"
+
+    return None, "NO_FRESH_RADAR_MATCH"
+
+
+matches = []
+skip_reasons = {}
+
+for order in orders:
+    match, reason = find_match(order)
+    if match is None:
+        skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+        continue
+
+    if match["roiAvailable"]:
+        cost = match["actualCostBtcEquivalent"]
+        ret = match["realizedReturnBtc"]
+        match["realizedReturnMultiple"] = round(ret / cost, 4)
+        match["realizedRoiPercent"] = round(
+            (ret / cost - 1) * 100,
+            2,
         )
+    else:
+        match["realizedReturnMultiple"] = None
+        match["realizedRoiPercent"] = None
 
-        for package in (snap.get("feed", {}).get("packages") or [])
+    matches.append(match)
 
-        if package.get("name") == order.get("packageName")
-        and (package.get("primary_chain") or {}).get("currency")
-        == order.get("soloMiningCoin")
-    ),
-    None
-)
 
-matches_raw = [
-    match
-    for order in orders
-    if parse_ts(order.get("startTs")) is not None
-    if (match := make_match(order)) is not None
-]
+def stats_for_rows(rows):
+    known = [
+        row for row in rows
+        if row.get("outcome") in {"HIT", "MISS"}
+    ]
+    hits = sum(1 for row in known if row.get("outcome") == "HIT")
+    misses = sum(1 for row in known if row.get("outcome") == "MISS")
+    unknown = len(rows) - len(known)
 
-matches = [
-    {
-        **x,
-        "realizedReturnMultiple": round(
-            x["realizedReturnBtc"] / x["actualCostBtc"],
-            4
-        ) if x["actualCostBtc"] > 0 else None,
-
-        "realizedRoiPercent": round(
-            (
-                x["realizedReturnBtc"] / x["actualCostBtc"] - 1
-            ) * 100,
-            2
-        ) if x["actualCostBtc"] > 0 else None
-    }
-    for x in matches_raw
-]
-
-signals = ["STRONG BUY", "BUY NOW", "GOOD", "WAIT", "NO BUY"]
-
-signal_stats = [
-    {
-        "signal": signal,
-
-        "orders": len(rows),
-
-        "hits": sum(
-            1 for x in rows
-            if x.get("hadReward")
-        ),
-
-        "misses": sum(
-            1 for x in rows
-            if not x.get("hadReward")
-        ),
-
-        "hitRatePercent": round(
-            100
-            * sum(1 for x in rows if x.get("hadReward"))
-            / len(rows),
-            2
-        ) if rows else None,
-
-        "totalCostBtc": round(
-            sum(x.get("actualCostBtc", 0) for x in rows),
-            8
-        ),
-
-        "totalReturnBtc": round(
-            sum(x.get("realizedReturnBtc", 0) for x in rows),
-            8
-        ),
-
-        "realizedReturnMultiple": round(
-            sum(x.get("realizedReturnBtc", 0) for x in rows)
-            /
-            sum(x.get("actualCostBtc", 0) for x in rows),
-            4
-        ) if sum(x.get("actualCostBtc", 0) for x in rows) > 0 else None,
-
-        "realizedRoiPercent": round(
-            (
-                sum(x.get("realizedReturnBtc", 0) for x in rows)
-                /
-                sum(x.get("actualCostBtc", 0) for x in rows)
-                - 1
-            ) * 100,
-            2
-        ) if sum(x.get("actualCostBtc", 0) for x in rows) > 0 else None,
-
-        "averageExpectedReturnPercent": round(
-            sum(
-                x.get("expectedReturnPercent")
-                for x in rows
-                if isinstance(
-                    x.get("expectedReturnPercent"),
-                    (int, float)
-                )
-            )
-            /
-            len([
-                x for x in rows
-                if isinstance(
-                    x.get("expectedReturnPercent"),
-                    (int, float)
-                )
-            ]),
-            2
-        ) if any(
-            isinstance(
-                x.get("expectedReturnPercent"),
-                (int, float)
-            )
-            for x in rows
-        ) else None
-    }
-
-    for signal in signals
-
-    if (
-        rows := [
-            x for x in matches
-            if x.get("finalSignal") == signal
-        ]
+    roi_rows = [
+        row for row in rows
+        if row.get("roiAvailable") is True
+    ]
+    total_cost = sum(
+        row["actualCostBtcEquivalent"]
+        for row in roi_rows
+        if isinstance(row.get("actualCostBtcEquivalent"), (int, float))
     )
-]
+    total_return = sum(
+        row["realizedReturnBtc"]
+        for row in roi_rows
+        if isinstance(row.get("realizedReturnBtc"), (int, float))
+    )
 
-summary = [
-    {
-        "package": x.get("packageName"),
-        "coin": x.get("coin"),
-        "finalSignal": x.get("finalSignal"),
-        "economicSignal": x.get("economicSignal"),
-        "expectedReturnPercent": x.get("expectedReturnPercent"),
-        "actualCostBtc": round(x.get("actualCostBtc", 0), 8),
-        "realizedReturnBtc": round(x.get("realizedReturnBtc", 0), 8),
-        "realizedReturnMultiple": x.get("realizedReturnMultiple"),
-        "realizedRoiPercent": x.get("realizedRoiPercent"),
-        "snapshotAgeMinutes": x.get("snapshotAgeMinutes"),
-        "closeToRewardPct": x.get("closeToRewardPct"),
-        "outcome": "HIT" if x.get("hadReward") else "MISS"
+    expected_values = [
+        row["expectedReturnPercent"]
+        for row in rows
+        if isinstance(row.get("expectedReturnPercent"), (int, float))
+    ]
+
+    return {
+        "orders": len(rows),
+        "knownOutcomes": len(known),
+        "hits": hits,
+        "misses": misses,
+        "unknownOutcomes": unknown,
+        "hitRatePercent": (
+            round(100 * hits / len(known), 2)
+            if known
+            else None
+        ),
+        "roiOrders": len(roi_rows),
+        "totalCostBtcEquivalent": round(total_cost, 8),
+        "totalReturnBtc": round(total_return, 8),
+        "realizedReturnMultiple": (
+            round(total_return / total_cost, 4)
+            if total_cost > 0
+            else None
+        ),
+        "realizedRoiPercent": (
+            round((total_return / total_cost - 1) * 100, 2)
+            if total_cost > 0
+            else None
+        ),
+        "averageExpectedReturnPercent": (
+            round(sum(expected_values) / len(expected_values), 2)
+            if expected_values
+            else None
+        ),
     }
-    for x in matches
-]
 
-total_cost = sum(
-    x.get("actualCostBtc", 0)
-    for x in matches
-)
 
-total_return = sum(
-    x.get("realizedReturnBtc", 0)
-    for x in matches
-)
+signal_stats = []
+for signal in SIGNALS:
+    rows = [row for row in matches if row.get("finalSignal") == signal]
+    if not rows:
+        continue
+    signal_stats.append({
+        "signal": signal,
+        **stats_for_rows(rows),
+    })
 
-overall = {
-    "orders": len(matches),
-    "hits": sum(
-        1 for x in matches
-        if x.get("hadReward")
-    ),
-    "totalCostBtc": round(total_cost, 8),
-    "totalReturnBtc": round(total_return, 8),
-    "realizedReturnMultiple": round(
-        total_return / total_cost,
-        4
-    ) if total_cost > 0 else None,
-    "realizedRoiPercent": round(
-        (total_return / total_cost - 1) * 100,
-        2
-    ) if total_cost > 0 else None
-}
+overall = stats_for_rows(matches)
 
 result = {
+    "reportVersion": 2,
+    "source": "PRIVATE_EASYMINING_ENTRY_TIME_VALIDATION",
+    "entrySnapshotMaxAgeMinutes": (
+        MAX_ENTRY_SNAPSHOT_AGE_SECONDS / 60
+    ),
     "completedOrders": len(orders),
     "radarSnapshots": len(snapshots),
     "validMatchedOrders": len(matches),
-    "matchedRewards": sum(
-        1 for x in matches
-        if x.get("hadReward")
-    ),
+    "matchedRewards": overall["hits"],
+    "unknownOutcomes": overall["unknownOutcomes"],
+    "skipReasons": skip_reasons,
     "overall": overall,
     "signalStats": signal_stats,
-    "matches": matches
+    "matches": matches,
+    "policy": {
+        "entryTimeOnly": True,
+        "unknownOutcomeExcludedFromHitRate": True,
+        "missingHitPayoutIsNotZero": True,
+        "currencyMarketMustMatch": True,
+        "usdtCostConvertedUsingEntrySnapshot": True,
+        "explicitNonpositivePayedAmountIsUnknownCost": True,
+    },
 }
 
 OUTPUT.write_text(
-    json.dumps(
-        result,
-        separators=(",", ":"),
-        ensure_ascii=False
-    ),
-    encoding="utf-8"
+    json.dumps(result, separators=(",", ":"), ensure_ascii=False),
+    encoding="utf-8",
 )
 
-print("PRIVATE RADAR ROI CALIBRATION OK")
+print("PRIVATE RADAR ENTRY-TIME CALIBRATION OK")
 print("Details retained only in temporary /tmp output")
+print("Matched:", len(matches))
+print("Known outcomes:", overall["knownOutcomes"])
+print("Unknown outcomes:", overall["unknownOutcomes"])
+print("ROI-complete:", overall["roiOrders"])
