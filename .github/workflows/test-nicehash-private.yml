@@ -19,7 +19,10 @@ on:
       - scripts/match_private_orders_radar_context.py
       - scripts/audit_private_order_git_feed_coverage.py
       - scripts/match_private_orders_git_feed_context.py
+      - scripts/evaluate_prospective_candidate_v1.py
+      - research/palladium-s-momentum-candidate-v1.json
       - tests/test_private_order_market_context.py
+      - tests/test_prospective_candidate_v1.py
       - tests/test_private_git_feed_context.py
       - tests/test_private_git_feed_coverage.py
       - tests/test_private_order_radar_context.py
@@ -49,6 +52,7 @@ jobs:
           python3 -m unittest tests.test_private_order_radar_context -v
           python3 -m unittest tests.test_private_git_feed_coverage -v
           python3 -m unittest tests.test_private_git_feed_context -v
+          python3 -m unittest tests.test_prospective_candidate_v1 -v
           python3 -m unittest tests.test_private_order_match_diagnostics -v
 
   private:
@@ -84,6 +88,8 @@ jobs:
         run: python3 scripts/audit_private_order_git_feed_coverage.py
       - name: Build Git buy-feed pre-entry HIT MISS context
         run: python3 scripts/match_private_orders_git_feed_context.py
+      - name: Evaluate frozen Palladium S prospective candidate v1
+        run: python3 scripts/evaluate_prospective_candidate_v1.py
       - name: Build Radar-only pre-entry context
         run: python3 scripts/match_private_orders_radar_context.py
       - name: Join entries to public market edge context
@@ -101,6 +107,7 @@ jobs:
           radar_only = json.loads(Path('/tmp/private-order-radar-preentry.json').read_text(encoding='utf-8'))
           git_coverage = json.loads(Path('/tmp/private-order-git-feed-coverage.json').read_text(encoding='utf-8'))
           git_context = json.loads(Path('/tmp/private-order-git-feed-context.json').read_text(encoding='utf-8'))
+          prospective = json.loads(Path('/tmp/private-prospective-candidate-v1.json').read_text(encoding='utf-8'))
           summary = result.get('preEntryFeatureSummary') or {}
           git_context_summary = git_context.get('summary') or {}
           radar_summary = radar_only.get('summary') or {}
@@ -294,6 +301,7 @@ jobs:
               'gitFeedEndpointHitMinusMissByRelay': dict(sorted(git_endpoint_comparisons_by_relay.items())),
               'gitFeedByRelayPackageHorizonOutcome': dict(sorted(git_window_by_relay.items())),
               'gitFeedHitMinusMissByRelay': dict(sorted(git_window_comparisons_by_relay.items())),
+              'frozenProspectiveCandidateV1': prospective,
               'gitFeedBaselineToleranceSensitivity': {
                   'role': git_sensitivity.get('role'),
                   'primaryToleranceMinutes': git_sensitivity.get('primaryToleranceMinutes'),
@@ -324,6 +332,7 @@ jobs:
               Path('/tmp/private-order-matches.json'),
               Path('/tmp/private-order-git-feed-coverage.json'),
               Path('/tmp/private-order-git-feed-context.json'),
+              Path('/tmp/private-prospective-candidate-v1.json'),
               Path('/tmp/private-order-radar-preentry.json'),
               Path('/tmp/private-order-market-context.json'),
           ):
@@ -340,6 +349,7 @@ jobs:
           rm -f /tmp/private-order-matches.json
           rm -f /tmp/private-order-git-feed-coverage.json
           rm -f /tmp/private-order-git-feed-context.json
+          rm -f /tmp/private-prospective-candidate-v1.json
           rm -f /tmp/private-order-radar-preentry.json
           rm -f /tmp/private-order-market-context.json
           rm -f /tmp/private-order-match.log
