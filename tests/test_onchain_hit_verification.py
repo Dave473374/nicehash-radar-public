@@ -212,6 +212,42 @@ class OnchainTests(unittest.TestCase):
         self.assertAlmostEqual(r["coinbaseRewardNative"],6.25,places=8)
         self.assertAlmostEqual(r["payoutToCoinbasePercent"],97.0,places=6)
 
+    def test_palladium_ordnet_fallback_verifies_doge_hash_only(self):
+        height=6380758
+        h="1d407ec5d1f0d35df2089784cfa410bd58db85a6ff62ae1fede6b60c6a0e2150"
+        primary=m.BLOCKCHAIR_BASE+f"/dogecoin/dashboards/block/{height}"
+        fallback=m.ORDNET_BASE+f"/doge/block/height/{height}"
+        op=FakeOpener({
+            primary: RuntimeError("blockchair unavailable"),
+            fallback: {"height":height,"hash":h,"time":1789830000,"difficulty":123.0},
+        })
+        event=ev("DOGE",height,h)
+        event["payoutReward"]=970034412690
+        r=m.verify_event(event, opener=op)
+        self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_BLOCK_MATCH")
+        self.assertEqual(r["verificationStrength"],"BLOCK_HEIGHT_HASH_KEYLESS_NODE_FALLBACK")
+        self.assertEqual(r["explorer"],m.ORDNET_BASE)
+        self.assertEqual(r["primaryErrorType"],"RuntimeError")
+        self.assertEqual(r["onchainBlockHash"],h)
+        self.assertAlmostEqual(r["niceHashPayoutRewardNative"],9700.3441269,places=7)
+        self.assertIsNone(r["coinbaseRewardNative"])
+        self.assertFalse(r["pairedChainEvidenceClaimed"])
+
+    def test_palladium_ordnet_fallback_hash_conflict_fails_closed(self):
+        height=6380758
+        expected="a"*64
+        actual="b"*64
+        primary=m.BLOCKCHAIR_BASE+f"/dogecoin/dashboards/block/{height}"
+        fallback=m.ORDNET_BASE+f"/doge/block/height/{height}"
+        op=FakeOpener({
+            primary: RuntimeError("blockchair unavailable"),
+            fallback: {"block":{"height":height,"hash":actual}},
+        })
+        r=m.verify_event(ev("DOGE",height,expected), opener=op)
+        self.assertEqual(r["status"],"CONFLICT_BLOCK_HASH")
+        self.assertEqual(r["explorer"],m.ORDNET_BASE)
+        self.assertEqual(r["onchainBlockHash"],actual)
+
     def test_palladium_hash_conflict_fails_closed(self):
         height=6380758
         actual="b"*64
