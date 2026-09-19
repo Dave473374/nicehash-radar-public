@@ -11,6 +11,11 @@ on:
       - tests/test_market_edge_research.py
       - .github/workflows/market-edge-research.yml
       - docs/market-edge-research.md
+      - docs/math-market-input-findings.md
+      - scripts/apply_math_consistency_shadow.py
+      - scripts/collect_public_market_history.py
+      - scripts/diagnose_market_inputs.py
+      - tests/test_market_input_diagnostics.py
   pull_request:
     branches: [main]
     paths:
@@ -18,6 +23,11 @@ on:
       - tests/test_market_edge_research.py
       - .github/workflows/market-edge-research.yml
       - docs/market-edge-research.md
+      - docs/math-market-input-findings.md
+      - scripts/apply_math_consistency_shadow.py
+      - scripts/collect_public_market_history.py
+      - scripts/diagnose_market_inputs.py
+      - tests/test_market_input_diagnostics.py
 
 permissions:
   contents: read
@@ -43,19 +53,21 @@ jobs:
           python3 scripts/check_private_api_policy.py
       - name: Test research and Phase 0 without network or account credentials
         run: |
-          python3 -m unittest discover -s tests -p test_market_edge_research.py -v
+          python3 -m unittest discover -s tests -p 'test_market*.py' -v
           python3 scripts/test_phase0_correctness.py
       - name: Analyze existing public files only
         run: |
           python3 scripts/build_market_edge_research.py \
             --output /tmp/market-edge-report.json \
             --pairs /tmp/market-edge-pairs.jsonl
+          python3 scripts/diagnose_market_inputs.py --output /tmp/input-diagnostics.json
       - uses: actions/upload-artifact@v4
         with:
           name: market-edge-research-${{ github.run_id }}
           path: |
             /tmp/market-edge-report.json
             /tmp/market-edge-pairs.jsonl
+            /tmp/input-diagnostics.json
           retention-days: 7
           if-no-files-found: error
 
@@ -81,14 +93,16 @@ jobs:
         run: |
           python3 scripts/check_forbidden_admin_access.py
           python3 scripts/check_private_api_policy.py
-          python3 -m unittest discover -s tests -p test_market_edge_research.py
+          python3 -m unittest discover -s tests -p 'test_market*.py'
       - name: Build report without changing source feeds
-        run: python3 scripts/build_market_edge_research.py
+        run: |
+          python3 scripts/build_market_edge_research.py
+          python3 scripts/diagnose_market_inputs.py
       - name: Persist only public research outputs
         run: |
           git config user.name 'NiceHash Radar Bot'
           git config user.email 'actions@github.com'
-          git add research/market-edge-report.json research/market-edge-pairs.jsonl
+          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json
           git diff --cached --quiet && exit 0
           git commit -m 'Update public market research (no decision changes)'
           for attempt in 1 2 3; do

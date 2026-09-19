@@ -1,178 +1,150 @@
+"""Conditional model reconciliation. No CURRENT or purchase-threshold changes."""
+import copy
 import json
+import math
 import os
 from pathlib import Path
 
-BUY_FEED = Path(os.getenv("BUY_RADAR_FEED", "buy-feed.json"))
-
 TWO32 = float(2 ** 32)
-SUPPORTED_ALGORITHMS = {
-    "SCRYPT",
-    "SHA256ASICBOOST",
-    "SHA256ASICBOOST_USDT",
-}
+BDIFF_ONE_TARGET = 0xffff << 208
+BDIFF_WORK_FACTOR = float(2 ** 256 / BDIFF_ONE_TARGET)
+SUPPORTED_ALGORITHMS = {'SCRYPT', 'SHA256ASICBOOST', 'SHA256ASICBOOST_USDT'}
+SUPPORTED_COINS = {'SCRYPT': {'LTC', 'DOGE'}, 'SHA256ASICBOOST': {'BTC', 'BCH'}, 'SHA256ASICBOOST_USDT': {'BTC', 'BCH'}}
 PASS_MAX_DIFF_PERCENT = 5.0
 WARNING_MAX_DIFF_PERCENT = 15.0
 
 
 def as_float(value):
-    if isinstance(value, (int, float)):
-        return float(value)
-    return None
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        value = float(value)
+        return value if math.isfinite(value) else None
+    except (ValueError, OverflowError):
+        return None
+
+
+def positive(value):
+    n = as_float(value)
+    return n if n is not None and n > 0 else None
 
 
 def expected_blocks_from_difficulty(hashrate_hps, duration_s, difficulty):
-    if (
-        hashrate_hps is None
-        or duration_s is None
-        or difficulty is None
-        or hashrate_hps <= 0
-        or duration_s <= 0
-        or difficulty <= 0
-    ):
+    h, t, d = map(positive, (hashrate_hps, duration_s, difficulty))
+    if None in (h, t, d):
         return None
-
-    return hashrate_hps * duration_s / (difficulty * TWO32)
+    try:
+        n = h / d * (t / TWO32)
+        return n if math.isfinite(n) and n > 0 else None
+    except (OverflowError, ZeroDivisionError):
+        return None
 
 
 def chain_check(package, chain):
-    algorithm = str(chain.get("algorithm") or "").upper()
-
-    if algorithm not in SUPPORTED_ALGORITHMS:
-        return {
-            "status": "NOT_APPLICABLE",
-            "algorithm": algorithm or None,
-            "reason": "Difficulty-to-work conversion not verified for this algorithm.",
-        }
-
-    package_hashrate = as_float(package.get("package_hashrate_hps"))
-    duration = as_float(package.get("duration_seconds"))
-    difficulty = as_float(chain.get("network_difficulty"))
-    feed_expected = as_float(chain.get("expected_blocks"))
-
-    difficulty_expected = expected_blocks_from_difficulty(
-        package_hashrate,
-        duration,
-        difficulty,
-    )
-
-    if difficulty_expected is None or feed_expected is None:
-        return {
-            "status": "UNKNOWN",
-            "algorithm": algorithm,
-            "reason": "Missing inputs for independent difficulty consistency check.",
-        }
-
-    if difficulty_expected == 0:
-        return {
-            "status": "UNKNOWN",
-            "algorithm": algorithm,
-            "reason": "Independent expected blocks is zero.",
-        }
-
-    signed_diff_percent = (
-        (feed_expected / difficulty_expected) - 1.0
-    ) * 100.0
-    abs_diff_percent = abs(signed_diff_percent)
-
-    if abs_diff_percent <= PASS_MAX_DIFF_PERCENT:
-        status = "PASS"
-    elif abs_diff_percent <= WARNING_MAX_DIFF_PERCENT:
-        status = "WARNING"
-    else:
-        status = "CRITICAL"
-
-    return {
-        "status": status,
-        "algorithm": algorithm,
-        "feedExpectedBlocks": round(feed_expected, 12),
-        "difficultyExpectedBlocks": round(difficulty_expected, 12),
-        "signedDifferencePercent": round(signed_diff_percent, 4),
-        "absoluteDifferencePercent": round(abs_diff_percent, 4),
-        "difficulty": difficulty,
-        "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
+    algorithm = str(chain.get('algorithm') or '').upper()
+    coin = str(chain.get('currency') or '').upper()
+    if coin not in SUPPORTED_COINS.get(algorithm, set()):
+        return {'status': 'NOT_APPLICABLE', 'algorithm': algorithm or None,
+                'reason': 'Difficulty convention not verified for this coin/algorithm pair.'}
+    h, duration, difficulty, supplied = map(positive, (
+        package.get('package_hashrate_hps'), package.get('duration_seconds'),
+        chain.get('network_difficulty'), chain.get('expected_blocks')))
+    expected = expected_blocks_from_difficulty(h, duration, difficulty)
+    if expected is None or supplied is None:
+        return {'status': 'UNKNOWN', 'algorithm': algorithm,
+                'reason': 'Inputs must be finite and strictly positive.'}
+    difference = 100 * (supplied / expected - 1)
+    if not math.isfinite(difference):
+        return {'status': 'UNKNOWN', 'algorithm': algorithm, 'reason': 'Numeric overflow.'}
+    status = 'PASS' if abs(difference) <= PASS_MAX_DIFF_PERCENT else 'WARNING' if abs(difference) <= WARNING_MAX_DIFF_PERCENT else 'CRITICAL'
+    result = {
+        'status': status, 'algorithm': algorithm,
+        'feedExpectedBlocks': supplied, 'difficultyExpectedBlocks': expected,
+        'signedDifferencePercent': round(difference, 6), 'absoluteDifferencePercent': round(abs(difference), 6),
+        'difficulty': difficulty, 'formula': 'hashrate_hps * duration_seconds / (difficulty * 2^32)',
+        'differenceKind': 'MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR',
+        'difficultyConvention': 'CONDITIONAL_BDIFF_APPROXIMATION',
+        'difficultyConventionVerifiedForUpstreamField': False,
+        'bdiffRefinedExpectedBlocks': expected * TWO32 / BDIFF_WORK_FACTOR,
+        'constantApproximationErrorPercent': (BDIFF_WORK_FACTOR / TWO32 - 1) * 100,
+        'externalInputsIndependentlyVerified': False,
+        'decomposition': {'status': 'MISSING_NETWORK_INPUTS'},
     }
+    network, target_time = map(positive, (chain.get('network_hashpower_hps'), chain.get('block_time_seconds')))
+    if network is not None and target_time is not None:
+        implied_time = difficulty / network * TWO32
+        network_expected = h / network * duration / target_time
+        ratio = implied_time / target_time
+        if all(math.isfinite(n) and n > 0 for n in (implied_time, network_expected, ratio)):
+            residual = 100 * (supplied / network_expected - 1)
+            result['decomposition'] = {
+                'status': 'EXPLAINED_BY_TARGET_TIME_MODEL' if abs(residual) <= 0.01 else 'FEED_FORMULA_NOT_RECONCILED',
+                'targetBlockTimeSeconds': target_time,
+                'impliedBlockTimeSeconds': implied_time,
+                'networkHashrateDerivedExpectedBlocks': network_expected,
+                'feedVsNetworkFormulaPercent': residual,
+                'networkVsDifficultyMultiplier': ratio,
+                'identity': 'lambda_H/lambda_D = (D*2^32/H_network)/T_target',
+                'impliedIntervalIsObservedBlockInterval': False,
+                'independentValidation': False,
+            }
+    return result
 
 
 def overall_status(checks):
-    statuses = {check.get("status") for check in checks}
-    if "CRITICAL" in statuses:
-        return "CRITICAL"
-    if "WARNING" in statuses:
-        return "WARNING"
-    if "UNKNOWN" in statuses:
-        return "UNKNOWN"
-    if "PASS" in statuses:
-        return "PASS"
-    return "NOT_APPLICABLE"
+    statuses = {x.get('status') for x in checks}
+    for status in ('CRITICAL', 'WARNING', 'UNKNOWN', 'PASS'):
+        if status in statuses:
+            return status
+    return 'NOT_APPLICABLE'
 
 
-feed = json.loads(BUY_FEED.read_text(encoding="utf-8"))
+def annotate(feed):
+    if not isinstance(feed, dict) or feed.get('status') != 'BUY FEED OK' or feed.get('ok') is not True:
+        raise ValueError('Refusing unhealthy BUY feed')
+    packages = feed.get('packages')
+    if not isinstance(packages, list) or not packages or any(not isinstance(p, dict) for p in packages):
+        raise ValueError('Invalid package list')
+    original = copy.deepcopy(feed)
+    summary = dict.fromkeys(('PASS', 'WARNING', 'CRITICAL', 'UNKNOWN', 'NOT_APPLICABLE'), 0)
+    for package in packages:
+        checks = []
+        for key, label in (('primary_chain', 'PRIMARY'), ('merge_chain', 'MERGE')):
+            chain = package.get(key)
+            if isinstance(chain, dict) and chain:
+                check = chain_check(package, chain)
+                check['chain'] = label
+                checks.append(check)
+        status = overall_status(checks)
+        summary[status] += 1
+        package['math_consistency_shadow'] = {
+            'model_version': 2, 'status': status, 'production_override': False, 'checks': checks,
+            'thresholds': {'passMaxAbsoluteDifferencePercent': PASS_MAX_DIFF_PERCENT,
+                           'warningMaxAbsoluteDifferencePercent': WARNING_MAX_DIFF_PERCENT},
+            'policy': 'Conditional consistency only, not proof of source truth or pricing edge. CURRENT and existing disagreement thresholds are unchanged.',
+        }
+    feed['math_consistency_shadow'] = {'model_version': 2, 'model_use': 'MATH_CONSISTENCY_AUDIT_ONLY',
+        'production_model': 'CURRENT', 'production_model_changed': False,
+        'supported_algorithms': sorted(SUPPORTED_ALGORITHMS), 'summary': summary}
+    def without_annotations(data):
+        data = copy.deepcopy(data)
+        data.pop('math_consistency_shadow', None)
+        for p in data['packages']:
+            p.pop('math_consistency_shadow', None)
+        return data
+    if without_annotations(original) != without_annotations(feed):
+        raise RuntimeError('Unexpected production field mutation')
+    return feed
 
-if feed.get("status") != "BUY FEED OK" or feed.get("ok") is not True:
-    raise SystemExit("Refusing to annotate unhealthy BUY feed")
 
-packages = feed.get("packages") or []
-summary = {
-    "PASS": 0,
-    "WARNING": 0,
-    "CRITICAL": 0,
-    "UNKNOWN": 0,
-    "NOT_APPLICABLE": 0,
-}
+def main():
+    path = Path(os.getenv('BUY_RADAR_FEED', 'buy-feed.json'))
+    feed = annotate(json.loads(path.read_text(encoding='utf-8')))
+    text = json.dumps(feed, indent=2, ensure_ascii=False, allow_nan=False) + '\n'
+    path.write_text(text, encoding='utf-8')
+    print('MATH CONSISTENCY SHADOW APPLIED', feed['math_consistency_shadow']['summary'])
+    print('CURRENT unchanged; decomposition is conditional, not independent evidence')
 
-for package in packages:
-    original_signal = package.get("final_signal")
 
-    checks = []
-    primary = package.get("primary_chain") or {}
-    if primary:
-        primary_check = chain_check(package, primary)
-        primary_check["chain"] = "PRIMARY"
-        checks.append(primary_check)
-
-    merge = package.get("merge_chain") or {}
-    if merge:
-        merge_check = chain_check(package, merge)
-        merge_check["chain"] = "MERGE"
-        checks.append(merge_check)
-
-    status = overall_status(checks)
-    summary[status] = summary.get(status, 0) + 1
-
-    package["math_consistency_shadow"] = {
-        "model_version": 1,
-        "status": status,
-        "production_override": False,
-        "checks": checks,
-        "thresholds": {
-            "passMaxAbsoluteDifferencePercent": PASS_MAX_DIFF_PERCENT,
-            "warningMaxAbsoluteDifferencePercent": WARNING_MAX_DIFF_PERCENT,
-        },
-        "policy": (
-            "Independent audit only. This check never changes CURRENT. "
-            "A WARNING/CRITICAL result means network hashrate-derived and "
-            "difficulty-derived expected work are materially inconsistent "
-            "and should not be treated as independent confirmation."
-        ),
-    }
-
-    if package.get("final_signal") != original_signal:
-        raise SystemExit("Math consistency shadow modified final_signal")
-
-feed["math_consistency_shadow"] = {
-    "model_version": 1,
-    "model_use": "MATH_CONSISTENCY_AUDIT_ONLY",
-    "production_model": "CURRENT",
-    "production_model_changed": False,
-    "supported_algorithms": sorted(SUPPORTED_ALGORITHMS),
-    "summary": summary,
-}
-
-BUY_FEED.write_text(
-    json.dumps(feed, indent=2, ensure_ascii=False) + "\n",
-    encoding="utf-8",
-)
-
-print("MATH CONSISTENCY SHADOW APPLIED")
-print("Summary:", summary)
-print("CURRENT production fields were not modified")
+if __name__ == '__main__':
+    main()
