@@ -63,6 +63,33 @@ def snapshot_feed_time(snapshot):
     return None
 
 
+def legacy_282_btc_only_feed(snapshot):
+    feed = snapshot.get("feed") or {}
+    packages = feed.get("packages")
+    if feed.get("relay_version") != "2.8.2" or not isinstance(packages, list) or not packages:
+        return False
+    for package in packages:
+        if not isinstance(package, dict):
+            return False
+        if package.get("currency_market") not in (None, ""):
+            return False
+        if str(package.get("size") or "") not in {"S", "M"}:
+            return False
+        price_btc = to_float(package.get("price_btc"))
+        if price_btc is None or price_btc <= 0:
+            return False
+    return True
+
+
+def resolved_package_currency(snapshot, package):
+    explicit = str(package.get("currency_market") or "").upper()
+    if explicit:
+        return explicit, "EXPLICIT_CURRENCY_MARKET"
+    if legacy_282_btc_only_feed(snapshot):
+        return "BTC", "LEGACY_2_8_2_BTC_ONLY_SCHEMA"
+    return "", "MISSING"
+
+
 def order_outcome(order):
     value = order.get("isReward")
     if value is True:
@@ -194,9 +221,10 @@ def find_match(order):
     for ts, snapshot in candidates:
         for package in (snapshot.get("feed", {}).get("packages") or []):
             package_coin = (package.get("primary_chain") or {}).get("currency")
-            package_currency = str(
-                package.get("currency_market") or ""
-            ).upper()
+            package_currency, package_currency_source = resolved_package_currency(
+                snapshot,
+                package,
+            )
 
             if package.get("name") != package_name:
                 continue
@@ -233,6 +261,7 @@ def find_match(order):
                 "coin": order_coin,
                 "mergeCoin": order.get("soloMiningMergeCoin"),
                 "currencyMarket": order_currency,
+                "radarCurrencySource": package_currency_source,
                 "packagePriceNative": to_float(order.get("packagePrice")),
                 "actualCostNative": native_cost,
                 "actualCostBtcEquivalent": cost_btc,
@@ -424,6 +453,7 @@ result = {
         "unknownOutcomeExcludedFromHitRate": True,
         "missingHitPayoutIsNotZero": True,
         "currencyMarketMustMatch": True,
+        "legacy282BtcOnlySchemaBridge": True,
         "usdtCostConvertedUsingEntrySnapshot": True,
         "explicitNonpositivePayedAmountIsUnknownCost": True,
     },

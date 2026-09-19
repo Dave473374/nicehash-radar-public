@@ -65,6 +65,32 @@ def digest(path: Path) -> str:
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
 
+def legacy_282_btc_only_feed(feed: dict) -> bool:
+    packages = feed.get('packages')
+    if feed.get('relay_version') != '2.8.2' or not isinstance(packages, list) or not packages:
+        return False
+    for package in packages:
+        if not isinstance(package, dict):
+            return False
+        if package.get('currency_market') not in (None, ''):
+            return False
+        if str(package.get('size') or '') not in {'S', 'M'}:
+            return False
+        price_btc = numeric(package.get('price_btc'), True)
+        if price_btc is None:
+            return False
+    return True
+
+
+def resolved_currency_and_price(feed: dict, package: dict) -> tuple[str, float | None, str]:
+    explicit = str(package.get('currency_market') or '').upper()
+    if explicit:
+        return explicit, numeric(package.get('price_native'), True), 'EXPLICIT_CURRENCY_MARKET'
+    if legacy_282_btc_only_feed(feed):
+        return 'BTC', numeric(package.get('price_btc'), True), 'LEGACY_2_8_2_BTC_ONLY_SCHEMA'
+    return '', None, 'MISSING'
+
+
 def source_algorithm(algorithm: str, currency: str) -> str | None:
     base = algorithm.upper().removesuffix('_USDT')
     if currency == 'USDT':
@@ -106,9 +132,11 @@ def collect_quotes(rows, now: datetime, counts: Counter) -> list[dict]:
             if not isinstance(chain, dict) or not isinstance(merge, dict):
                 continue
             name, coin = p.get('name'), chain.get('currency')
-            currency, algorithm = str(p.get('currency_market') or '').upper(), str(chain.get('algorithm') or '').upper()
+            currency, price, currency_source = resolved_currency_and_price(feed, p)
+            algorithm = str(chain.get('algorithm') or '').upper()
             market_key = source_algorithm(algorithm, currency)
-            h, duration, price = (numeric(p.get(k), True) for k in ('package_hashrate_hps', 'duration_seconds', 'price_native'))
+            h = numeric(p.get('package_hashrate_hps'), True)
+            duration = numeric(p.get('duration_seconds'), True)
             if not isinstance(name, str) or not name or not isinstance(coin, str) or not coin or market_key is None or None in (h, duration, price):
                 counts['invalidPackages'] += 1
                 continue
@@ -124,6 +152,7 @@ def collect_quotes(rows, now: datetime, counts: Counter) -> list[dict]:
             point = {
                 'package': name, 'size': identity[1], 'currency': currency, 'coin': coin,
                 'mergeCoin': identity[4] or None, 'marketAlgorithm': market_key, 'relayVersion': version,
+                'currencySource': currency_source,
                 'quoteAt': iso(quote), 'observedAt': iso(observed),
                 'priceNative': price, 'durationSeconds': duration, 'hashrateHps': h,
                 'workPerNative': work_per_native,
@@ -335,7 +364,8 @@ def build_report(snapshot_rows, market_rows, now: datetime) -> tuple[dict, list[
                               'Divergence and forward quote labels do not demonstrate block-prediction or realized profit.',
                               'PAIRING is as-of quote time; future market rows and late observations are excluded.',
                               'A math PASS is consistency, not independent verification of input truth.',
-                              'Market collection time records receipt, not a verified upstream price timestamp.'],
+                              'Market collection time records receipt, not a verified upstream price timestamp.',
+                              'Relay 2.8.2 BTC-only snapshots may be normalized from price_btc when the whole feed satisfies the frozen legacy schema contract.'],
               'packages': sorted(summaries, key=lambda p: (p['priority'] != 'PRIMARY', p['package'], p['currency']))}
     return report, paired
 
