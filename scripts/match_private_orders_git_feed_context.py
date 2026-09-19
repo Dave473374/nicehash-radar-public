@@ -24,6 +24,7 @@ BUY_FEED_PATH = "buy-feed.json"
 MAX_ENDPOINT_AGE_SECONDS = 15 * 60
 BASELINE_TOLERANCE_SECONDS = 10 * 60
 WINDOWS_MINUTES = (15, 30, 60)
+SENSITIVITY_TOLERANCE_MINUTES = (10, 15, 20, 25, 30)
 MAX_SCAN_COMMITS_PER_ORDER = 72
 
 FEATURES = (
@@ -239,6 +240,38 @@ def window_features(endpoint: dict, baseline: dict, horizon: int, target: dateti
     }
 
 
+def build_windows(
+    start: datetime,
+    series: list[dict],
+    endpoint: dict,
+    tolerance_seconds: int,
+) -> list[dict]:
+    windows = []
+    for horizon in WINDOWS_MINUTES:
+        target = start - timedelta(minutes=horizon)
+        candidates = [
+            row for row in series
+            if row["_quote"] <= target and row["_available"] <= start
+        ]
+        if not candidates:
+            windows.append({
+                "horizonMinutes": horizon,
+                "status": "NO_BASELINE_AT_OR_BEFORE_TARGET",
+            })
+            continue
+        baseline = candidates[-1]
+        distance = (target - baseline["_quote"]).total_seconds()
+        if distance > tolerance_seconds:
+            windows.append({
+                "horizonMinutes": horizon,
+                "status": "BASELINE_TOO_FAR_FROM_TARGET",
+                "baselineDistanceSeconds": round(distance, 3),
+            })
+            continue
+        windows.append(window_features(endpoint, baseline, horizon, target, start))
+    return windows
+
+
 def build_order_context(order: dict, points: list[dict]) -> dict:
     start = parse_time(order.get("startTs"))
     if start is None:
@@ -258,29 +291,21 @@ def build_order_context(order: dict, points: list[dict]) -> dict:
         }
 
     series = [row for row in rows if same_series(row, endpoint)]
-    windows = []
-    for horizon in WINDOWS_MINUTES:
-        target = start - timedelta(minutes=horizon)
-        candidates = [
-            row for row in series
-            if row["_quote"] <= target and row["_available"] <= start
-        ]
-        if not candidates:
-            windows.append({
-                "horizonMinutes": horizon,
-                "status": "NO_BASELINE_AT_OR_BEFORE_TARGET",
-            })
-            continue
-        baseline = candidates[-1]
-        distance = (target - baseline["_quote"]).total_seconds()
-        if distance > BASELINE_TOLERANCE_SECONDS:
-            windows.append({
-                "horizonMinutes": horizon,
-                "status": "BASELINE_TOO_FAR_FROM_TARGET",
-                "baselineDistanceSeconds": round(distance, 3),
-            })
-            continue
-        windows.append(window_features(endpoint, baseline, horizon, target, start))
+    windows = build_windows(
+        start,
+        series,
+        endpoint,
+        BASELINE_TOLERANCE_SECONDS,
+    )
+    sensitivity = {
+        str(tolerance): build_windows(
+            start,
+            series,
+            endpoint,
+            tolerance * 60,
+        )
+        for tolerance in SENSITIVITY_TOLERANCE_MINUTES
+    }
 
     return {
         "status": "FRESH_ENDPOINT",
@@ -288,6 +313,7 @@ def build_order_context(order: dict, points: list[dict]) -> dict:
         "currencySource": endpoint.get("currencySource"),
         "relayVersion": endpoint.get("relayVersion"),
         "windows": windows,
+        "baselineToleranceSensitivity": sensitivity,
     }
 
 
@@ -297,6 +323,8 @@ def summarize(rows: list[dict]) -> dict:
     endpoint_series = Counter()
     window_status = Counter()
     grouped = defaultdict(list)
+    sensitivity_status = Counter()
+    sensitivity_grouped = defaultdict(list)
 
     for row in rows:
         package = str(row.get("packageName") or "UNKNOWN")
@@ -320,6 +348,26 @@ def summarize(rows: list[dict]) -> dict:
                 window_status[(package, horizon, result, status)] += 1
             if status == "MATCHED" and isinstance(horizon, int):
                 grouped[(package, horizon, result)].append(window)
+
+        sensitivity = context.get("baselineToleranceSensitivity")
+        if isinstance(sensitivity, dict):
+            for tolerance_text, windows in sensitivity.items():
+                try:
+                    tolerance = int(tolerance_text)
+                except (TypeError, ValueError):
+                    continue
+                if tolerance not in SENSITIVITY_TOLERANCE_MINUTES or not isinstance(windows, list):
+                    continue
+                for window in windows:
+                    if not isinstance(window, dict):
+                        continue
+                    horizon = window.get("horizonMinutes")
+                    status = str(window.get("status") or "UNKNOWN")
+                    if not isinstance(horizon, int):
+                        continue
+                    sensitivity_status[(tolerance, package, horizon, result, status)] += 1
+                    if status == "MATCHED":
+                        sensitivity_grouped[(tolerance, package, horizon, result)].append(window)
 
     by_group = {}
     package_horizon = defaultdict(dict)
@@ -358,6 +406,43 @@ def summarize(rows: list[dict]) -> dict:
             )
         comparisons[f"{package}|{horizon}m"] = comp
 
+    sensitivity_by_group = {}
+    sensitivity_package_horizon = defaultdict(dict)
+    for (tolerance, package, horizon, result), items in sorted(sensitivity_grouped.items()):
+        summary = {"matchedOrders": len(items)}
+        for field in FEATURES:
+            values = [
+                float(item[field])
+                for item in items
+                if number(item.get(field)) is not None
+            ]
+            summary["median" + field[0].upper() + field[1:]] = (
+                round(median(values), 6) if values else None
+            )
+        key = f"{tolerance}m|{package}|{horizon}m|{result}"
+        sensitivity_by_group[key] = summary
+        sensitivity_package_horizon[(tolerance, package, horizon)][result] = summary
+
+    sensitivity_comparisons = {}
+    for (tolerance, package, horizon), outcomes in sorted(sensitivity_package_horizon.items()):
+        hit = outcomes.get("HIT")
+        miss = outcomes.get("MISS")
+        if not hit or not miss:
+            continue
+        comp = {
+            "hitOrders": hit["matchedOrders"],
+            "missOrders": miss["matchedOrders"],
+        }
+        for field in FEATURES:
+            metric = "median" + field[0].upper() + field[1:]
+            hv, mv = hit.get(metric), miss.get(metric)
+            comp["hitMinusMiss" + field[0].upper() + field[1:]] = (
+                round(hv - mv, 6)
+                if isinstance(hv, (int, float)) and isinstance(mv, (int, float))
+                else None
+            )
+        sensitivity_comparisons[f"{tolerance}m|{package}|{horizon}m"] = comp
+
     return {
         "role": "PRIVATE_GIT_FEED_PRE_ENTRY_HIT_MISS_DESCRIPTIVE",
         "ordersByPackageOutcome": {
@@ -376,6 +461,18 @@ def summarize(rows: list[dict]) -> dict:
         },
         "byPackageHorizonOutcome": by_group,
         "hitMinusMiss": comparisons,
+        "baselineToleranceSensitivity": {
+            "role": "RETROSPECTIVE_METHOD_SENSITIVITY_ONLY",
+            "primaryToleranceMinutes": BASELINE_TOLERANCE_SECONDS // 60,
+            "testedToleranceMinutes": list(SENSITIVITY_TOLERANCE_MINUTES),
+            "windowStatusByTolerancePackageHorizonOutcome": {
+                f"{t}m|{p}|{h}m|{o}|{s}": n
+                for (t, p, h, o, s), n in sorted(sensitivity_status.items())
+            },
+            "byTolerancePackageHorizonOutcome": sensitivity_by_group,
+            "hitMinusMiss": sensitivity_comparisons,
+            "canRaiseSignal": False,
+        },
         "canRaiseSignal": False,
     }
 
@@ -409,6 +506,7 @@ def analyze(order_doc: dict, commit_rows: list[dict]) -> dict:
             "maxFreshEndpointAgeSeconds": MAX_ENDPOINT_AGE_SECONDS,
             "baselineToleranceSeconds": BASELINE_TOLERANCE_SECONDS,
             "windowsMinutes": list(WINDOWS_MINUTES),
+            "sensitivityToleranceMinutes": list(SENSITIVITY_TOLERANCE_MINUTES),
             "commitMustPrecedeOrderEntry": True,
             "feedCheckedAtMustPrecedeOrderEntry": True,
             "sameRelayVersionWithinWindow": True,
@@ -421,6 +519,7 @@ def analyze(order_doc: dict, commit_rows: list[dict]) -> dict:
             "Completed orders are user-selected rather than randomized trials.",
             "Only one Palladium S HIT is currently available, so HIT/MISS differences are exploratory.",
             "Git commit availability is required in addition to feed checked_at to prevent future leakage.",
+            "Baseline tolerances above 10 minutes are retrospective method-sensitivity checks only and are not primary evidence.",
             "No feature here can change CURRENT/final_signal without separate time-separated validation.",
         ],
     }

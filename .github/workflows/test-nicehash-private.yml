@@ -198,6 +198,26 @@ jobs:
               for key, value in (git_context_summary.get('hitMinusMiss') or {}).items()
               if family_key(key)
           }
+          git_sensitivity = git_context_summary.get('baselineToleranceSensitivity') or {}
+
+          def sensitivity_family_key(key):
+              return any(f"|{package}|" in key for package in allowed)
+
+          git_sensitivity_status = {
+              key: value
+              for key, value in (git_sensitivity.get('windowStatusByTolerancePackageHorizonOutcome') or {}).items()
+              if sensitivity_family_key(key)
+          }
+          git_sensitivity_windows = {
+              key: value
+              for key, value in (git_sensitivity.get('byTolerancePackageHorizonOutcome') or {}).items()
+              if sensitivity_family_key(key)
+          }
+          git_sensitivity_comparisons = {
+              key: value
+              for key, value in (git_sensitivity.get('hitMinusMiss') or {}).items()
+              if sensitivity_family_key(key)
+          }
 
           by_outcome = {
               key: value
@@ -240,6 +260,15 @@ jobs:
               'gitFeedWindowStatusByPackageHorizonOutcome': dict(sorted(git_context_window_status.items())),
               'gitFeedByPackageHorizonOutcome': dict(sorted(git_context_windows.items())),
               'gitFeedHitMinusMiss': dict(sorted(git_context_comparisons.items())),
+              'gitFeedBaselineToleranceSensitivity': {
+                  'role': git_sensitivity.get('role'),
+                  'primaryToleranceMinutes': git_sensitivity.get('primaryToleranceMinutes'),
+                  'testedToleranceMinutes': git_sensitivity.get('testedToleranceMinutes'),
+                  'windowStatusByTolerancePackageHorizonOutcome': dict(sorted(git_sensitivity_status.items())),
+                  'byTolerancePackageHorizonOutcome': dict(sorted(git_sensitivity_windows.items())),
+                  'hitMinusMiss': dict(sorted(git_sensitivity_comparisons.items())),
+                  'canRaiseSignal': False,
+              },
               'marketContextOrdersByOutcome': orders,
               'coverageByOutcomeStatus': coverage,
               'byPackageHorizonOutcome': by_outcome,
