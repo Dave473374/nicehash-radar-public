@@ -334,7 +334,7 @@ def evaluate(candidate: dict, context_doc: dict) -> dict:
         "ineligibleReasons": dict(sorted(ineligible.items())),
         "performanceGate": performance,
         "containsOrderIds": False,
-        "containsTimestamps": False,
+        "containsPrivateOrderTimestamps": False,
         "containsAmountsOrRoi": False,
         "automaticActions": False,
         "canRaiseSignal": False,
