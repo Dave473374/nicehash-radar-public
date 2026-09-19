@@ -17,6 +17,9 @@ on:
       - "scripts/collect_shared_packages.py"
       - "scripts/build_evidence_scorecard.py"
       - "scripts/build_calibration_report.py"
+      - "scripts/evaluate_prospective_candidate_v1.py"
+      - "research/palladium-s-momentum-candidate-v1.json"
+      - "tests/test_prospective_candidate_v1.py"
       - "scripts/test_phase0_correctness.py"
       - ".github/workflows/phase0-correctness-regression.yml"
       - ".github/workflows/update-buy-feed.yml"
@@ -47,10 +50,15 @@ jobs:
             scripts/collect_shared_packages.py \
             scripts/build_evidence_scorecard.py \
             scripts/build_calibration_report.py \
+            scripts/evaluate_prospective_candidate_v1.py \
+            tests/test_prospective_candidate_v1.py \
             scripts/test_phase0_correctness.py
 
       - name: Smoke-test calibration report build
         run: python3 scripts/build_calibration_report.py > /tmp/calibration-report-smoke.log
+
+      - name: Test frozen prospective candidate v1
+        run: python3 -m unittest tests.test_prospective_candidate_v1 -v
 
       - name: Run Phase 0 regression scenarios
         run: python3 scripts/test_phase0_correctness.py
