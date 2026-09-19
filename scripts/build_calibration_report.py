@@ -90,8 +90,8 @@ and r.get("radar_matched") is True
 for r in all_rows
 ),
 "important_note": "Reward-time context only. These are successful mining events matched to fresh Radar state near reward time, not entry-time evidence. One EasyMining event counts once, merged LTC+DOGE rewards from the same event are not double-counted, and this dataset never supplies a MISS denominator.",
-"entry_time_eligible": false,
-"can_supply_miss_denominator": false,
+"entry_time_eligible": False,
+"can_supply_miss_denominator": False,
 "signals": signal_stats,
 "coins": dict(coins),
 "packages": dict(packages),
