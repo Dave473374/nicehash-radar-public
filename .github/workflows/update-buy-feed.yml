@@ -32,6 +32,9 @@ jobs:
       - name: Apply EDGE shadow audit
         run: python3 scripts/apply_edge_shadow.py
 
+      - name: Apply math consistency audit
+        run: python3 scripts/apply_math_consistency_shadow.py
+
       - name: Validate final JSON
         run: |
           python -m json.tool buy-feed.json > /dev/null
@@ -42,6 +45,7 @@ jobs:
           feed = json.loads(Path("buy-feed.json").read_text(encoding="utf-8"))
           shadow = feed.get("calibrated_shadow") or {}
           edge = feed.get("edge_shadow") or {}
+          math_shadow = feed.get("math_consistency_shadow") or {}
           packages = feed.get("packages") or []
 
           assert shadow.get("model_use") == "NEW_CALIBRATED_SHADOW_ONLY"
@@ -50,6 +54,9 @@ jobs:
           assert edge.get("model_use") == "EDGE_SHADOW_AUDIT_ONLY"
           assert edge.get("production_model") == "CURRENT"
           assert edge.get("production_model_changed") is False
+          assert math_shadow.get("model_use") == "MATH_CONSISTENCY_AUDIT_ONLY"
+          assert math_shadow.get("production_model") == "CURRENT"
+          assert math_shadow.get("production_model_changed") is False
           assert packages
 
           for package in packages:
@@ -62,6 +69,9 @@ jobs:
               assert edge_shadow.get("current_signal") == package.get("final_signal")
               assert edge_shadow.get("production_override") is False
               assert edge_shadow.get("changed_from_current") is False
+
+              math_package = package.get("math_consistency_shadow") or {}
+              assert math_package.get("production_override") is False
 
           print("SHADOW VALIDATION OK")
           print("Packages:", len(packages))
