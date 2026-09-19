@@ -178,6 +178,16 @@ jobs:
               for key, value in (git_context_summary.get('endpointStatusByPackageOutcome') or {}).items()
               if family_key(key)
           }
+          git_context_series = {
+              key: value
+              for key, value in (git_context_summary.get('endpointSeriesByPackageOutcome') or {}).items()
+              if family_key(key)
+          }
+          git_context_window_status = {
+              key: value
+              for key, value in (git_context_summary.get('windowStatusByPackageHorizonOutcome') or {}).items()
+              if family_key(key)
+          }
           git_context_windows = {
               key: value
               for key, value in (git_context_summary.get('byPackageHorizonOutcome') or {}).items()
@@ -226,6 +236,8 @@ jobs:
               'gitFeedAgeBucketsByPackageOutcome': dict(sorted(git_feed_buckets.items())),
               'freshExactGitFeedByPackageOutcome': dict(sorted(git_feed_fresh.items())),
               'gitFeedEndpointStatusByPackageOutcome': dict(sorted(git_context_endpoints.items())),
+              'gitFeedEndpointSeriesByPackageOutcome': dict(sorted(git_context_series.items())),
+              'gitFeedWindowStatusByPackageHorizonOutcome': dict(sorted(git_context_window_status.items())),
               'gitFeedByPackageHorizonOutcome': dict(sorted(git_context_windows.items())),
               'gitFeedHitMinusMiss': dict(sorted(git_context_comparisons.items())),
               'marketContextOrdersByOutcome': orders,

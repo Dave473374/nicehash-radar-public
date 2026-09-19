@@ -294,6 +294,8 @@ def build_order_context(order: dict, points: list[dict]) -> dict:
 def summarize(rows: list[dict]) -> dict:
     orders = Counter()
     endpoint_status = Counter()
+    endpoint_series = Counter()
+    window_status = Counter()
     grouped = defaultdict(list)
 
     for row in rows:
@@ -302,9 +304,22 @@ def summarize(rows: list[dict]) -> dict:
         context = row.get("gitFeedPreEntry") if isinstance(row.get("gitFeedPreEntry"), dict) else {}
         orders[(package, result)] += 1
         endpoint_status[(package, result, str(context.get("status") or "UNKNOWN"))] += 1
+        if context.get("status") == "FRESH_ENDPOINT":
+            endpoint_series[(
+                package,
+                result,
+                str(context.get("relayVersion") or "UNKNOWN"),
+                str(context.get("currencySource") or "UNKNOWN"),
+            )] += 1
         for window in context.get("windows") or []:
-            if isinstance(window, dict) and window.get("status") == "MATCHED":
-                grouped[(package, int(window["horizonMinutes"]), result)].append(window)
+            if not isinstance(window, dict):
+                continue
+            horizon = window.get("horizonMinutes")
+            status = str(window.get("status") or "UNKNOWN")
+            if isinstance(horizon, int):
+                window_status[(package, horizon, result, status)] += 1
+            if status == "MATCHED" and isinstance(horizon, int):
+                grouped[(package, horizon, result)].append(window)
 
     by_group = {}
     package_horizon = defaultdict(dict)
@@ -350,6 +365,14 @@ def summarize(rows: list[dict]) -> dict:
         },
         "endpointStatusByPackageOutcome": {
             f"{p}|{o}|{s}": n for (p, o, s), n in sorted(endpoint_status.items())
+        },
+        "endpointSeriesByPackageOutcome": {
+            f"{p}|{o}|RELAY_{v}|CURRENCY_{cs}": n
+            for (p, o, v, cs), n in sorted(endpoint_series.items())
+        },
+        "windowStatusByPackageHorizonOutcome": {
+            f"{p}|{h}m|{o}|{s}": n
+            for (p, h, o, s), n in sorted(window_status.items())
         },
         "byPackageHorizonOutcome": by_group,
         "hitMinusMiss": comparisons,

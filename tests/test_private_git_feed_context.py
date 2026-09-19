@@ -184,6 +184,36 @@ class GitFeedContextTests(unittest.TestCase):
         row30 = next(x for x in windows if x["horizonMinutes"] == 30)
         self.assertNotEqual(row30["status"], "MATCHED")
 
+    def test_window_status_summary_explains_missing_hit_baseline(self):
+        commits = [
+            commit(
+                checked="2026-09-19T11:55:00+00:00",
+                committed="2026-09-19T11:56:00+00:00",
+                p=package(version="2.9.0"),
+                version="2.9.0",
+            ),
+        ]
+        result = m.analyze({"list": [order(result=True)]}, commits)
+        summary = result["summary"]
+        self.assertEqual(
+            summary["windowStatusByPackageHorizonOutcome"][
+                "Palladium S|15m|HIT|NO_BASELINE_AT_OR_BEFORE_TARGET"
+            ],
+            1,
+        )
+        self.assertEqual(
+            summary["windowStatusByPackageHorizonOutcome"][
+                "Palladium S|30m|HIT|NO_BASELINE_AT_OR_BEFORE_TARGET"
+            ],
+            1,
+        )
+        self.assertEqual(
+            summary["endpointSeriesByPackageOutcome"][
+                "Palladium S|HIT|RELAY_2.9.0|CURRENCY_EXPLICIT_CURRENCY_MARKET"
+            ],
+            1,
+        )
+
     def test_summary_has_no_order_timestamps_or_amounts(self):
         commits = [
             commit(
