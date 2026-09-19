@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "generatedAt": "2026-09-19T08:55:34.450012+00:00",
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-19T09:07:44.689013+00:00",
   "protocolHash": "ba500589e4908319e07d57ca0466498b6318368b7b9dbee86ca77c4e94d79129",
   "role": "LAG_EPISODE_QUOTE_RESEARCH_ONLY",
   "currentProductionModelChanged": false,
@@ -18,6 +18,29 @@
   "episodeCount": 1,
   "currentWindowEpisodes": 1,
   "controlAnchorsInCurrentWindow": 3,
+  "persistedControlCount": 3,
+  "episodeRecording": {
+    "counts": {
+      "15mLateOrUnknownCapture": 1,
+      "30mLateOrUnknownCapture": 1,
+      "quarantinedRevisions": 0
+    },
+    "medianDetectionDelayMinutes": 41.495,
+    "maxDetectionDelayMinutes": 41.495,
+    "isPhoneDeliveryLatency": false,
+    "isLiveTradingPerformance": false
+  },
+  "controlRecording": {
+    "counts": {
+      "15mLateOrUnknownCapture": 3,
+      "30mLateOrUnknownCapture": 3,
+      "quarantinedRevisions": 0
+    },
+    "medianDetectionDelayMinutes": 78.199,
+    "maxDetectionDelayMinutes": 78.199,
+    "isPhoneDeliveryLatency": false,
+    "isLiveTradingPerformance": false
+  },
   "episodeStatusCounts": {
     "CENSORED_GAP_OR_SERIES": 1
   },
@@ -35,13 +58,15 @@
     "Holdout begins after protocol registration. Daily reference uses only labels known before a 60-minute embargo.",
     "Controls and episodes may overlap across packages or groups; counts are not independent statistical trials.",
     "Descriptive folds do not prove incremental edge beyond EV, regimes, fees or actual delivery latency.",
+    "Episode/control features and observed labels are frozen; revised or retracted evidence is excluded.",
+    "First-recorded times separate pre-outcome capture from late replay, never proving phone delivery.",
     "The research schedule is not a live phone notification system. Missing/gapped observations stay censored."
   ],
   "inputSha256": {
-    "research/market-edge-pairs.jsonl": "7be7109be90ced8f92457030684bacc6e536b53c611c660817ef20f9143da900",
-    "calibration/public-market-history.jsonl": "51f068f8ca0ffaebe104f16fef10e93d1fee70d1f5b06d758bd51922ed5d7a4f",
+    "research/market-edge-pairs.jsonl": "8d66f4b279ec0b95ef7e66ef02b00a833d205deb37d22f9a9db2a581d6c7dd6b",
+    "calibration/public-market-history.jsonl": "af65c3cb53f54a3b6d48761e6a5e45a104bf1369134271d222340ba80ba7c1b6",
     "research/lag-protocol-v1.json": "4dbe3baa1437bcbf0feef32ee92307164f8834d2e4e4bdc128ec6ad90188ae8a",
-    "research/lag-episodes.jsonl": "b06695c46772abac91d54b75a629973f4f0876f22d6989e187ace10fb538e7d5"
+    "research/lag-episodes.jsonl": "c023195b14e217f9bb4408aa6d012d7ce03c68f85978f7a1c9bc63d98adb55b7"
   },
   "inputReadWarnings": {}
 }
