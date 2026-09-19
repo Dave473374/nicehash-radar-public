@@ -1,9 +1,19 @@
 import json
+import os
 from datetime import datetime, timezone
 
-SNAPSHOTS_FILE = "calibration/radar-snapshots.jsonl"
-EVENTS_FILE = "mining-events.json"
-OUTPUT_FILE = "calibration/mining-event-matches.jsonl"
+SNAPSHOTS_FILE = os.getenv(
+    "RADAR_SNAPSHOTS_FILE",
+    "calibration/radar-snapshots.jsonl",
+)
+EVENTS_FILE = os.getenv(
+    "MINING_EVENTS_FILE",
+    "mining-events.json",
+)
+OUTPUT_FILE = os.getenv(
+    "MINING_EVENT_MATCH_OUTPUT",
+    "calibration/mining-event-matches.jsonl",
+)
 
 # Reward events describe context near the successful reward time only.
 # They must never be treated as entry-time evidence or a MISS denominator.
