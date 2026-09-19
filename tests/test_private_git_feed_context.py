@@ -214,6 +214,46 @@ class GitFeedContextTests(unittest.TestCase):
             1,
         )
 
+    def test_tolerance_sensitivity_can_recover_a_12_minute_baseline_without_changing_primary(self):
+        commits = [
+            commit(
+                checked="2026-09-19T11:18:00+00:00",
+                committed="2026-09-19T11:19:00+00:00",
+                p=package(work_scale=1.0, merge_diff=100),
+            ),
+            commit(
+                checked="2026-09-19T11:55:00+00:00",
+                committed="2026-09-19T11:56:00+00:00",
+                p=package(work_scale=1.2, merge_diff=60),
+            ),
+        ]
+        result = m.analyze({"list": [order(result=True)]}, commits)
+        summary = result["summary"]
+        self.assertNotIn(
+            "Palladium S|30m|HIT",
+            summary["byPackageHorizonOutcome"],
+        )
+        sensitivity = summary["baselineToleranceSensitivity"]
+        self.assertEqual(
+            sensitivity["windowStatusByTolerancePackageHorizonOutcome"][
+                "10m|Palladium S|30m|HIT|BASELINE_TOO_FAR_FROM_TARGET"
+            ],
+            1,
+        )
+        self.assertEqual(
+            sensitivity["windowStatusByTolerancePackageHorizonOutcome"][
+                "15m|Palladium S|30m|HIT|MATCHED"
+            ],
+            1,
+        )
+        self.assertEqual(
+            sensitivity["byTolerancePackageHorizonOutcome"][
+                "15m|Palladium S|30m|HIT"
+            ]["matchedOrders"],
+            1,
+        )
+        self.assertFalse(sensitivity["canRaiseSignal"])
+
     def test_summary_has_no_order_timestamps_or_amounts(self):
         commits = [
             commit(
