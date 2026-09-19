@@ -257,11 +257,17 @@ def find_match(order):
 
 matches = []
 skip_reasons = {}
+skip_reasons_by_package = {}
 
 for order in orders:
     match, reason = find_match(order)
     if match is None:
         skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+        package_name = str(order.get("packageName") or "UNKNOWN")
+        package_key = f"{package_name}|{reason}"
+        skip_reasons_by_package[package_key] = (
+            skip_reasons_by_package.get(package_key, 0) + 1
+        )
         continue
 
     if match["roiAvailable"]:
@@ -365,6 +371,7 @@ result = {
     "matchedRewards": overall["hits"],
     "unknownOutcomes": overall["unknownOutcomes"],
     "skipReasons": skip_reasons,
+    "skipReasonsByPackage": skip_reasons_by_package,
     "overall": overall,
     "signalStats": signal_stats,
     "matches": matches,
