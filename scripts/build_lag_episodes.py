@@ -1,6 +1,7 @@
 """Public-file-only, locked-rule pricing-lag episodes and time-separated quote evaluation."""
 from __future__ import annotations
 import argparse
+import copy
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,9 @@ import math
 from pathlib import Path
 from statistics import median
 from build_market_edge_research import timestamp, numeric, json_lines, digest
+
+# Digest of the already committed v1 protocol; no new dates or cutoffs are fitted.
+LOCKED_PROTOCOL_HASH = 'ba500589e4908319e07d57ca0466498b6318368b7b9dbee86ca77c4e94d79129'
 
 PACKAGES = {'Palladium S': ('BTC', 'LTC', 'SCRYPT'), 'Silver S': ('BTC', 'BCH', 'SHA256ASICBOOST'),
             'Silver 5': ('USDT', 'BCH', 'SHA256ASICBOOST_USDT'), 'Silver 20': ('USDT', 'BCH', 'SHA256ASICBOOST_USDT')}
@@ -37,6 +41,8 @@ def validate_protocol(p):
         raise ValueError('Protocol needs a future UTC-day holdout after registration')
     if start.utcoffset() != timedelta(0) or p.get('packages') != list(PACKAGES):
         raise ValueError('Protocol package set or UTC boundary changed')
+    if protocol_hash(p) != LOCKED_PROTOCOL_HASH:
+        raise ValueError('Registered v1 protocol content changed, including dates or hypothesis')
     return p
 
 
@@ -63,7 +69,8 @@ def contracts(rows, now):
                      and unit.get('speedDisplayUnit') == data.get('speedUnit')
                      and numeric(unit.get('marketFactor'), True) is not None
                      and numeric(unit.get('priceFactor'), True) is not None
-                     and isinstance(unit.get('priceDisplayUnit'), str))
+                     and isinstance(unit.get('priceDisplayUnit'), str)
+                     and bool(unit.get('priceDisplayUnit')))
             value = {'valid': valid, 'price': numeric(data.get('priceRaw'), True),
                      'currency': unit.get('currencyMarket'),
                      'signature': [unit.get(k) for k in ('currencyMarket', 'marketFactor', 'priceFactor',
@@ -115,6 +122,12 @@ def prepare(rows, metadata, p, now, counts):
             reason = 'INVALID_NUMERIC_INPUT'
         elif not isinstance(row.get('relayVersion'), str) or not row['relayVersion']:
             reason = 'NO_VERSION'
+        if reason is None:
+            # Do not trust a derived work/cost field independently of its inputs.
+            expected_work = (float(row['hashrateHps']) / float(row['priceNative'])) * float(row['durationSeconds'])
+            if (not math.isfinite(expected_work) or expected_work <= 0
+                    or not math.isclose(expected_work, float(row['workPerNative']), rel_tol=1e-9, abs_tol=0)):
+                reason = 'WORK_COST_IDENTITY_MISMATCH'
         contract = metadata.get((wanted[2], mt)) if mt else None
         if reason is None and (not contract or not contract.get('valid') or contract.get('currency') != wanted[0]):
             reason = 'UNVERIFIED_DISPLAY_CONTRACT'
@@ -238,92 +251,195 @@ def collect_episodes(groups, p, now):
     return records, controls
 
 
+def label_payload(label):
+    """Recording time is bookkeeping, never part of a source-observation comparison."""
+    return {k: v for k, v in label.items() if k != 'firstObservedAt'}
+
+
+def checked_records(records):
+    """Refuse corrupt/ambiguous ledgers instead of silently overwriting evidence."""
+    out = {}
+    for row in records:
+        if not isinstance(row, dict):
+            raise ValueError('Ledger record must be an object')
+        identity, entry = row.get('id'), row.get('entry')
+        if not isinstance(identity, str) or len(identity) != 64 or not isinstance(entry, dict):
+            raise ValueError('Invalid ledger identity or entry')
+        if timestamp(entry.get('quoteAt')) is None or not isinstance(entry.get('package'), str):
+            raise ValueError('Invalid ledger entry time/package')
+        ph = row.get('protocolHash')
+        if not isinstance(ph, str) or len(ph) != 64:
+            raise ValueError('Invalid ledger protocol hash')
+        expected = hashlib.sha256(f"{ph}|{entry['package']}|{entry.get('currency')}|{entry['quoteAt']}".encode()).hexdigest()
+        if identity != expected:
+            raise ValueError('Ledger ID does not match frozen entry identity')
+        labels = row.get('labels')
+        if not isinstance(labels, list) or len({v.get('horizonMinutes') for v in labels if isinstance(v, dict)}) != len(labels):
+            raise ValueError('Invalid or duplicate label horizons')
+        if any(not isinstance(v, dict) or v.get('status') not in {'PENDING', 'MISSING', 'CENSORED', 'OBSERVED'} for v in labels):
+            raise ValueError('Invalid label status')
+        for label in labels:
+            if label.get('status') == 'OBSERVED':
+                qt, available = timestamp(label.get('quoteAt')), timestamp(label.get('availableAt'))
+                n = label.get('futureWorkChangePercent')
+                if qt is None or available is None or available < qt or isinstance(n, bool) or not isinstance(n, (int, float)) or not math.isfinite(n):
+                    raise ValueError('Invalid observed label')
+        first = row.get('firstRecordedAt')
+        if first is not None and timestamp(first) is None:
+            raise ValueError('Invalid first-recorded time')
+        canonical(row)  # Fail closed on NaN/Infinity anywhere in persistent evidence.
+        if identity in out and canonical(out[identity]) != canonical(row):
+            raise ValueError('Conflicting records under one ledger ID')
+        out[identity] = copy.deepcopy(row)
+    return out
+
+
 def merge_ledger(previous, new, now):
-    """Freeze entry-time features. Recompute only outcomes; retain aged-out evidence."""
-    out = {r['id']: dict(r) for r in previous}
-    for r in new:
-        old = out.get(r['id'])
-        if old:
-            if canonical(old['entry']) != canonical(r['entry']):
-                out[r['id']] = {**old, 'sourceRevision': True}
-                continue
-            prior_labels = {v['horizonMinutes']: v for v in old.get('labels', [])}
-            revised = old.get('sourceRevision', False)
-            for i, label in enumerate(r['labels']):
-                prior = prior_labels.get(label['horizonMinutes'])
-                if prior and prior.get('status') == 'OBSERVED':
-                    if label.get('status') == 'OBSERVED' and canonical(prior) != canonical(label):
-                        revised = True
-                    r['labels'][i] = prior
-            r = {**r, 'firstRecordedAt': old.get('firstRecordedAt'), 'sourceRevision': revised}
-        else:
-            r = {**r, 'firstRecordedAt': now.isoformat(), 'sourceRevision': False}
-        out[r['id']] = r
-    return sorted(out.values(),key=lambda r:(r['entry']['quoteAt'],r['entry']['package']))
+    """Freeze entry/observed labels; quarantine retracted or revised evidence."""
+    out = checked_records(previous)
+    incoming = checked_records(new)
+    for identity, r in incoming.items():
+        old = out.get(identity)
+        reasons = set(old.get('sourceRevisionReasons', [])) if old else set()
+        if old and canonical(old['entry']) != canonical(r['entry']):
+            reasons.add('ENTRY_CHANGED')
+            out[identity] = {**old, 'sourceRevision': True, 'sourceRevisionReasons': sorted(reasons)}
+            continue
+        prior_labels = {v['horizonMinutes']: v for v in old.get('labels', [])} if old else {}
+        next_labels = {v['horizonMinutes']: v for v in r['labels']}
+        merged_labels = []
+        for horizon in sorted(set(prior_labels) | set(next_labels)):
+            prior, label = prior_labels.get(horizon), next_labels.get(horizon)
+            if prior and prior.get('status') == 'OBSERVED':
+                # An invalidated observation cannot keep silently passing evaluation.
+                # Retain its original value for audit, but quarantine the whole record.
+                if label is None or label.get('status') != 'OBSERVED':
+                    reasons.add('OBSERVED_LABEL_RETRACTED')
+                elif canonical(label_payload(prior)) != canonical(label_payload(label)):
+                    reasons.add('OBSERVED_LABEL_CHANGED')
+                merged_labels.append(prior)
+            elif label is not None:
+                if label.get('status') == 'OBSERVED':
+                    label['firstObservedAt'] = now.isoformat()
+                merged_labels.append(label)
+            else:
+                merged_labels.append(prior)
+        r['labels'] = merged_labels
+        r['firstRecordedAt'] = old.get('firstRecordedAt') if old else now.isoformat()
+        r['sourceRevision'] = bool(reasons) or bool(old and old.get('sourceRevision'))
+        r['sourceRevisionReasons'] = sorted(reasons)
+        r['evidenceVersion'] = 2
+        out[identity] = r
+    # Records outside the current archive are preserved, not guessed or deleted.
+    return sorted(out.values(), key=lambda r: (r['entry']['quoteAt'], r['entry']['package']))
 
 
-def observed(records, horizon, p_hash, start, end, available_by):
-    values=[]
+def recorded_before_target(record, horizon):
+    at = timestamp(record['entry'].get('quoteAt'))
+    available = timestamp(record['entry'].get('availableAt'))
+    first = timestamp(record.get('firstRecordedAt'))
+    return (at is not None and available is not None and first is not None
+            and at <= available <= first < at + timedelta(minutes=horizon))
+
+
+def observed(records, horizon, p_hash, start, end, available_by, signature=None, pre_recorded=False):
+    values = []
     for r in records:
-        at=timestamp(r['entry']['quoteAt'])
+        at = timestamp(r['entry'].get('quoteAt'))
         if r.get('sourceRevision') or r.get('protocolHash') != p_hash or at is None or not start <= at < end:
             continue
-        for label in r.get('labels',[]):
-            available=timestamp(label.get('availableAt'))
-            if (label.get('horizonMinutes')==horizon and label.get('status')=='OBSERVED'
-                and available is not None and available <= available_by):
-                value=label.get('futureWorkChangePercent')
-                if isinstance(value,(int,float)) and math.isfinite(value):
+        if signature is not None and canonical(r['entry'].get('signature')) != signature:
+            continue
+        if pre_recorded and not recorded_before_target(r, horizon):
+            continue
+        for label in r.get('labels', []):
+            available = timestamp(label.get('availableAt'))
+            if (label.get('horizonMinutes') == horizon and label.get('status') == 'OBSERVED'
+                    and available is not None and available <= available_by):
+                value = label.get('futureWorkChangePercent')
+                if not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value):
                     values.append(value)
     return values
 
 
+def recording_summary(records):
+    counts = Counter()
+    delays = []
+    for r in records:
+        first, at = timestamp(r.get('firstRecordedAt')), timestamp(r['entry'].get('quoteAt'))
+        if first is not None and at is not None and first >= at:
+            delays.append((first-at).total_seconds()/60)
+        for label in r.get('labels', []):
+            prefix = str(label['horizonMinutes']) + 'm'
+            counts[prefix + 'RecordedBeforeTarget' if recorded_before_target(r, label['horizonMinutes']) else prefix + 'LateOrUnknownCapture'] += 1
+        counts['quarantinedRevisions'] += bool(r.get('sourceRevision'))
+    return {'counts': dict(counts),
+            'medianDetectionDelayMinutes': round(median(delays), 3) if delays else None,
+            'maxDetectionDelayMinutes': round(max(delays), 3) if delays else None,
+            'isPhoneDeliveryLatency': False, 'isLiveTradingPerformance': False}
+
+
 def walk_forward(records, controls, p, now):
-    start=timestamp(p['validationStart']); ph=protocol_hash(p); folds=[]
-    day=start
+    start = timestamp(p['validationStart']); ph = protocol_hash(p); folds = []
+    day = start
     while day <= now:
-        end=day+timedelta(days=1); cutoff=day-timedelta(minutes=p['embargoMinutes'])
+        end = day + timedelta(days=1); cutoff = day - timedelta(minutes=p['embargoMinutes'])
         for name in p['packages']:
-            rs=[r for r in records if r['entry']['package']==name]
-            cs=[r for r in controls if r['entry']['package']==name]
-            for horizon in p['horizonsMinutes']:
-                reference=observed(cs,horizon,ph,day-timedelta(days=p['referenceDays']),cutoff,cutoff)
-                values=observed(rs,horizon,ph,day,min(end,now+timedelta(microseconds=1)),now)
-                control_values=observed(cs,horizon,ph,day,min(end,now+timedelta(microseconds=1)),now)
-                # No optimized model or significance claim: expanding history, fixed rule, daily forward folds.
-                folds.append({'package':name,'testDay':day.date().isoformat(),'horizonMinutes':horizon,
-                    'referenceEndsAt':cutoff.isoformat(), 'referenceControlCount':len(reference),
-                    'testEpisodeCount':len(values),'testControlCount':len(control_values),
-                    'referenceMedianFutureWorkChangePercent':median(reference) if reference else None,
-                    'testMedianFutureWorkChangePercent':median(values) if values else None,
-                    'testControlMedianFutureWorkChangePercent':median(control_values) if control_values else None,
-                    'status':'DESCRIPTIVE_ONLY' if reference and values else 'INSUFFICIENT_LABELS'})
-        day=end
-    return {'status':'NOT_STARTED' if now < start else 'FORWARD_QUOTE_EVALUATION_ONLY',
-            'validationStart':p['validationStart'],'folds':folds,'thresholdsFitted':False,
-            'automaticallyPromotesSignal':False,'verdict':'NO_VERIFIED_EDGE'}
+            rs = [r for r in records if r['entry']['package'] == name]
+            cs = [r for r in controls if r['entry']['package'] == name]
+            # Never pool baseline/outcomes across relay versions or unit contracts.
+            signatures = sorted({canonical(r['entry']['signature']) for r in rs+cs
+                                 if isinstance(r['entry'].get('signature'), list)
+                                 and timestamp(r['entry']['quoteAt']) < min(end, now+timedelta(microseconds=1))})
+            for signature in signatures:
+                for horizon in p['horizonsMinutes']:
+                    reference = observed(cs, horizon, ph, day-timedelta(days=p['referenceDays']), cutoff, cutoff, signature)
+                    values = observed(rs, horizon, ph, day, min(end, now+timedelta(microseconds=1)), now, signature)
+                    control_values = observed(cs, horizon, ph, day, min(end, now+timedelta(microseconds=1)), now, signature)
+                    timely = observed(rs, horizon, ph, day, min(end, now+timedelta(microseconds=1)), now, signature, True)
+                    folds.append({'package': name, 'seriesSignature': json.loads(signature),
+                        'testDay': day.date().isoformat(), 'horizonMinutes': horizon,
+                        'referenceEndsAt': cutoff.isoformat(), 'referenceControlCount': len(reference),
+                        'testEpisodeCount': len(values), 'testControlCount': len(control_values),
+                        'testPreOutcomeRecordedEpisodeCount': len(timely),
+                        'testLateOrUnknownRecordedEpisodeCount': len(values)-len(timely),
+                        'referenceMedianFutureWorkChangePercent': median(reference) if reference else None,
+                        'testMedianFutureWorkChangePercent': median(values) if values else None,
+                        'testControlMedianFutureWorkChangePercent': median(control_values) if control_values else None,
+                        'isLiveTradingPerformance': False,
+                        'status': 'DESCRIPTIVE_ONLY' if reference and values else 'INSUFFICIENT_LABELS'})
+        day = end
+    return {'status': 'NOT_STARTED' if now < start else 'FORWARD_QUOTE_EVALUATION_ONLY',
+            'validationStart': p['validationStart'], 'folds': folds, 'thresholdsFitted': False,
+            'automaticallyPromotesSignal': False, 'verdict': 'NO_VERIFIED_EDGE'}
 
 
-def run(pairs, market_rows, protocol, previous, now):
+def run(pairs, market_rows, protocol, previous, now, previous_controls=None, *, include_controls=False):
     p=validate_protocol(protocol); counts=Counter()
     groups=prepare(pairs,contracts(market_rows,now),p,now,counts)
     episodes,controls=collect_episodes(groups,p,now)
     ledger=merge_ledger(previous,episodes,now)
-    report={'schemaVersion':1,'generatedAt':now.isoformat(),'protocolHash':protocol_hash(p),
+    control_ledger=merge_ledger(previous_controls or [],controls,now)
+    report={'schemaVersion':2,'generatedAt':now.isoformat(),'protocolHash':protocol_hash(p),
         'role':'LAG_EPISODE_QUOTE_RESEARCH_ONLY','currentProductionModelChanged':False,
         'automaticPurchase':False,'automaticCancel':False,'privateApiUsed':False,
         'networkRequestsMade':0,'canRaiseSignal':False,'verdict':'NO_VERIFIED_EDGE',
         'counts':dict(counts),'episodeCount':len(ledger),'currentWindowEpisodes':len(episodes),
         'controlAnchorsInCurrentWindow':len(controls),
+        'persistedControlCount':len(control_ledger),
+        'episodeRecording':recording_summary(ledger),
+        'controlRecording':recording_summary(control_ledger),
         'episodeStatusCounts':dict(Counter(r['episode']['status'] for r in ledger)),
-        'walkForward':walk_forward(ledger,controls,p,now),
+        'walkForward':walk_forward(ledger,control_ledger,p,now),
         'limitations':['Relative price statistic is not an executable purchase price or verified absolute discount.',
             'Features are causal; future quote labels are separate and are never HIT/MISS or realized ROI.',
             'Holdout begins after protocol registration. Daily reference uses only labels known before a 60-minute embargo.',
             'Controls and episodes may overlap across packages or groups; counts are not independent statistical trials.',
             'Descriptive folds do not prove incremental edge beyond EV, regimes, fees or actual delivery latency.',
+            'Episode/control features and observed labels are frozen; revised or retracted evidence is excluded.',
+            'First-recorded times separate pre-outcome capture from late replay, never proving phone delivery.',
             'The research schedule is not a live phone notification system. Missing/gapped observations stay censored.']}
-    return report,ledger
+    return (report,ledger,control_ledger) if include_controls else (report,ledger)
 
 
 def main():
@@ -333,28 +449,45 @@ def main():
     ap.add_argument('--protocol',type=Path,default=Path('research/lag-protocol-v1.json'))
     ap.add_argument('--previous',type=Path,default=Path('research/lag-episodes.jsonl'))
     ap.add_argument('--episodes',type=Path,default=Path('research/lag-episodes.jsonl'))
+    ap.add_argument('--controls',type=Path,help='Default: lag-controls.jsonl beside episode output')
+    ap.add_argument('--previous-controls',type=Path,help='Default: controls output')
     ap.add_argument('--output',type=Path,default=Path('research/lag-report.json'))
     ap.add_argument('--now')
     a=ap.parse_args(); now=timestamp(a.now) if a.now else datetime.now(timezone.utc)
     if now is None: ap.error('Aware timestamp required')
-    sources=[a.pairs,a.market,a.protocol]; outputs=[a.episodes,a.output]
-    if len({x.resolve() for x in sources+outputs})!=5 or a.previous.resolve() in {a.output.resolve(),*(p.resolve() for p in sources)}:
-        ap.error('Outputs may not overwrite sources; only previous ledger can equal episodes')
+    a.controls=a.controls or a.episodes.with_name('lag-controls.jsonl')
+    a.previous_controls=a.previous_controls or a.controls
+    sources=[a.pairs,a.market,a.protocol]; outputs=[a.episodes,a.controls,a.output]
+    resolved={x.resolve() for x in sources+outputs}
+    if len(resolved)!=6:
+        ap.error('Every input/output must be distinct except its own previous ledger')
+    for previous,destination in ((a.previous,a.episodes),(a.previous_controls,a.controls)):
+        if previous.resolve() in resolved and previous.resolve()!=destination.resolve():
+            ap.error('A previous ledger may only equal its own output')
+    if a.previous.resolve()==a.previous_controls.resolve():
+        ap.error('Episode and control ledgers must remain separate')
     before={str(x):digest(x) for x in sources}
-    if a.previous.exists(): before[str(a.previous)]=digest(a.previous)
-    counts=Counter(); old=list(json_lines(a.previous,counts)) if a.previous.exists() else []
-    # Never silently discard an unreadable previously committed ledger.
-    if counts: raise ValueError('Invalid prior ledger')
+    counts=Counter()
+    def prior(path):
+        if not path.exists(): return []
+        before[str(path)]=digest(path)
+        rows=list(json_lines(path,counts))
+        if counts: raise ValueError('Invalid prior ledger')
+        return rows
+    old,old_controls=prior(a.previous),prior(a.previous_controls)
     protocol=json.loads(a.protocol.read_text())
-    report,ledger=run(json_lines(a.pairs,counts),json_lines(a.market,counts),protocol,old,now)
+    report,ledger,controls=run(json_lines(a.pairs,counts),json_lines(a.market,counts),protocol,
+                              old,now,old_controls,include_controls=True)
     report.update(inputSha256=before,inputReadWarnings=dict(counts))
     if before!={path:digest(Path(path)) for path in before}: raise RuntimeError('Inputs changed during analysis')
-    texts=[ ''.join(canonical(r)+'\n' for r in ledger), json.dumps(report,indent=2,allow_nan=False)+'\n' ]
+    texts=[''.join(canonical(r)+'\n' for r in ledger), ''.join(canonical(r)+'\n' for r in controls),
+           json.dumps(report,indent=2,allow_nan=False)+'\n']
     for path,text in zip(outputs,texts):
         path.parent.mkdir(parents=True,exist_ok=True)
         temp=path.with_suffix(path.suffix+'.tmp'); temp.write_text(text,encoding='utf-8'); temp.replace(path)
-    print('LAG RESEARCH OK; CURRENT unchanged; no account or network access')
-    print('Episodes:',len(ledger),'Controls:',report['controlAnchorsInCurrentWindow'],'Counts:',report['counts'])
+    print('LAG EVIDENCE VERIFIED; CURRENT unchanged; no account or network access')
+    print('Episodes:',len(ledger),'Controls retained:',len(controls),'Counts:',report['counts'])
+    print('Recording:',report['episodeRecording'])
     print('Walk-forward:',report['walkForward']['status'],'| NO_VERIFIED_EDGE')
 
 
