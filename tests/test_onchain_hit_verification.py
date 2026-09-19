@@ -101,42 +101,57 @@ class OnchainTests(unittest.TestCase):
         self.assertAlmostEqual(r["payoutToCoinbasePercent"],97.000000,places=4)
         self.assertEqual(r["coinbaseTagClass"],"NOT_CHECKED_BCH_BLOCKCHAIR_FALLBACK")
 
-    def test_bch_fullstack_second_fallback_verifies_969090_hash(self):
+    def test_bch_ninja_second_fallback_verifies_969090_hash_and_label(self):
         height=969090
         h="000000000000000000661729e061860fc71d945b3adc7b91ebb211dcdf3abc8e"
         primary=m.MEMPOOL_BASES["BCH"]+f"/api/block-height/{height}"
         blockchair=m.BLOCKCHAIR_BASE+f"/bitcoin-cash/dashboards/block/{height}"
-        fullstack=m.FULLSTACK_BCH_BASE+f"/v6/full-node/blockchain/getBlockHash/{height}"
+        ninja=m.BCH_NINJA_BASE+f"/api/blocks-by-height/{height}"
         op=FakeOpener({
             primary: RuntimeError("primary unavailable"),
             blockchair: RuntimeError("blockchair unavailable"),
-            fullstack: {"blockHash": h},
+            ninja: [{"height":height,"hash":h,"time":1700000000,"poolInfo":{"poolName":"NiceHash"}}],
         })
         event=ev("BCH",height,h)
         event["payoutReward"]=303137009
         r=m.verify_event(event, opener=op, now="2026-09-19T00:00:00+00:00")
-        self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_BLOCK_MATCH")
-        self.assertEqual(r["verificationStrength"],"BLOCK_HEIGHT_HASH_PUBLIC_NODE_SECOND_FALLBACK")
+        self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_NICEHASH_MINER_INFO")
         self.assertEqual(r["onchainBlockHash"],h)
         self.assertAlmostEqual(r["niceHashPayoutRewardNative"],3.03137009,places=8)
-        self.assertIsNone(r["coinbaseRewardNative"])
-        self.assertEqual(r["coinbaseTagClass"],"NOT_CHECKED_FULLSTACK_HASH_ONLY")
+        self.assertEqual(r["explorerMinerLabel"],"NiceHash")
+        self.assertEqual(r["coinbaseTagClass"],"BCH_NINJA_NICEHASH_MINER_LABEL")
 
-    def test_bch_fullstack_hash_conflict_fails_closed(self):
+    def test_bch_ninja_hash_conflict_fails_closed(self):
         height=969090
         expected="a"*64
         actual="b"*64
         primary=m.MEMPOOL_BASES["BCH"]+f"/api/block-height/{height}"
         blockchair=m.BLOCKCHAIR_BASE+f"/bitcoin-cash/dashboards/block/{height}"
-        fullstack=m.FULLSTACK_BCH_BASE+f"/v6/full-node/blockchain/getBlockHash/{height}"
+        ninja=m.BCH_NINJA_BASE+f"/api/blocks-by-height/{height}"
         op=FakeOpener({
             primary: RuntimeError("primary unavailable"),
             blockchair: RuntimeError("blockchair unavailable"),
-            fullstack: {"blockHash": actual},
+            ninja: {"blocks":[{"height":height,"hash":actual,"poolInfo":{"poolName":"NiceHash"}}]},
         })
         r=m.verify_event(ev("BCH",height,expected), opener=op)
         self.assertEqual(r["status"],"CONFLICT_BLOCK_HASH")
-        self.assertEqual(r["explorer"],m.FULLSTACK_BCH_BASE)
+        self.assertEqual(r["explorer"],m.BCH_NINJA_BASE)
+
+    def test_bch_ninja_ambiguous_hash_response_fails_closed(self):
+        height=969090
+        primary=m.MEMPOOL_BASES["BCH"]+f"/api/block-height/{height}"
+        blockchair=m.BLOCKCHAIR_BASE+f"/bitcoin-cash/dashboards/block/{height}"
+        ninja=m.BCH_NINJA_BASE+f"/api/blocks-by-height/{height}"
+        op=FakeOpener({
+            primary: RuntimeError("primary unavailable"),
+            blockchair: RuntimeError("blockchair unavailable"),
+            ninja: [
+                {"height":height,"hash":"a"*64},
+                {"height":height,"hash":"b"*64},
+            ],
+        })
+        r=m.verify_event(ev("BCH",height,"a"*64), opener=op)
+        self.assertEqual(r["status"],"SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH")
 
     def test_bch_primary_hash_conflict_is_not_hidden_by_fallback(self):
         height=969090
