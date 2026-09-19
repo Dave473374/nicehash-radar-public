@@ -129,6 +129,26 @@ class AlertLatencyTests(unittest.TestCase):
         self.assertEqual(rows, [])
         self.assertEqual(counts["lateCapture"], 1)
 
+    def test_duplicate_snapshot_conflict_is_rejected(self):
+        import json
+        base = {
+            "status": "BUY FEED OK", "ok": True, "upstream_status": 200, "market_status": "MARKET OK",
+            "checked_at": T.isoformat(), "relay_version": "2.9.0", "decision_engine": "E",
+            "packages": [pkg()],
+        }
+        changed = dict(base)
+        changed["packages"] = [pkg(ev=99.0)]
+        rows = [
+            {"collected_at": (T + timedelta(minutes=1)).isoformat(), "feed": base},
+            {"collected_at": (T + timedelta(minutes=1)).isoformat(), "feed": changed},
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "s.jsonl"
+            p.write_text("".join(json.dumps(row) + "\\n" for row in rows))
+            loaded, counts = m.load_snapshots(p, T + timedelta(minutes=2))
+        self.assertEqual(loaded, [])
+        self.assertEqual(counts["conflictingSnapshot"], 1)
+
     def test_report_cannot_raise_buy_signal(self):
         out = m.evaluate([snap(0, [pkg()])], T + timedelta(minutes=1))
         self.assertFalse(out["fiveMinutePushRecommended"])

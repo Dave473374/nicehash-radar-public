@@ -42,7 +42,11 @@ def finite(value):
 
 
 def canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    def encode(obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        raise TypeError(f"Unsupported canonical type: {type(obj).__name__}")
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False, default=encode)
 
 
 def primary(package):
