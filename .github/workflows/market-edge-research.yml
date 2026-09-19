@@ -18,6 +18,8 @@ on:
       - tests/test_market_input_diagnostics.py
       - scripts/build_lag_episodes.py
       - tests/test_market_lag_episodes.py
+      - tests/test_market_lag_integrity.py
+      - docs/lag-evidence-integrity.md
       - research/lag-protocol-v1.json
       - docs/lag-episodes-v1.md
   pull_request:
@@ -34,6 +36,8 @@ on:
       - tests/test_market_input_diagnostics.py
       - scripts/build_lag_episodes.py
       - tests/test_market_lag_episodes.py
+      - tests/test_market_lag_integrity.py
+      - docs/lag-evidence-integrity.md
       - research/lag-protocol-v1.json
       - docs/lag-episodes-v1.md
 
@@ -71,6 +75,7 @@ jobs:
           python3 scripts/diagnose_market_inputs.py --output /tmp/input-diagnostics.json
           python3 scripts/build_lag_episodes.py \
             --pairs /tmp/market-edge-pairs.jsonl \
+            --previous-controls research/lag-controls.jsonl --controls /tmp/lag-controls.jsonl \
             --episodes /tmp/lag-episodes.jsonl --output /tmp/lag-report.json
       - uses: actions/upload-artifact@v4
         with:
@@ -80,6 +85,7 @@ jobs:
             /tmp/market-edge-pairs.jsonl
             /tmp/input-diagnostics.json
             /tmp/lag-episodes.jsonl
+            /tmp/lag-controls.jsonl
             /tmp/lag-report.json
           retention-days: 7
           if-no-files-found: error
@@ -116,7 +122,7 @@ jobs:
         run: |
           git config user.name 'NiceHash Radar Bot'
           git config user.email 'actions@github.com'
-          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-report.json
+          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-controls.jsonl research/lag-report.json
           git diff --cached --quiet && exit 0
           git commit -m 'Update public market research (no decision changes)'
           for attempt in 1 2 3; do
