@@ -131,6 +131,30 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(ps[0]['workPerNative'], 1e12*3600/5)
         self.assertEqual(ps[0]['currency'], 'USDT')
 
+    def test_legacy_282_btc_quote_uses_price_btc_as_native_price(self):
+        q = quote(version='2.8.2')
+        p = q['feed']['packages'][0]
+        p.pop('currency_market')
+        p.pop('price_native')
+        p['price_btc'] = 0.0001
+        ps, counts = points([q], [market()])
+        self.assertEqual(len(ps), 1)
+        self.assertEqual(ps[0]['currency'], 'BTC')
+        self.assertEqual(ps[0]['currencySource'], 'LEGACY_2_8_2_BTC_ONLY_SCHEMA')
+        self.assertEqual(ps[0]['priceNative'], 0.0001)
+        self.assertEqual(ps[0]['workPerNative'], 1e12 * 3600 / 0.0001)
+        self.assertEqual(counts['invalidPackages'], 0)
+
+    def test_missing_currency_unknown_schema_remains_rejected(self):
+        q = quote(version='unknown')
+        p = q['feed']['packages'][0]
+        p.pop('currency_market')
+        p.pop('price_native')
+        p['price_btc'] = 0.0001
+        ps, counts = points([q], [market()])
+        self.assertEqual(ps, [])
+        self.assertGreater(counts['invalidPackages'], 0)
+
     def test_18_unit_change_breaks_series(self):
         ps, _ = points([quote(NOW-timedelta(minutes=5)), quote()], [market(NOW-timedelta(minutes=5)), market(unit='GH')])
         self.assertIsNone(r.transition(*ps))
