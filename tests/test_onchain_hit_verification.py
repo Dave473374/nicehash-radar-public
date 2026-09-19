@@ -101,6 +101,43 @@ class OnchainTests(unittest.TestCase):
         self.assertAlmostEqual(r["payoutToCoinbasePercent"],97.000000,places=4)
         self.assertEqual(r["coinbaseTagClass"],"NOT_CHECKED_BCH_BLOCKCHAIR_FALLBACK")
 
+    def test_bch_fullstack_second_fallback_verifies_969090_hash(self):
+        height=969090
+        h="000000000000000000661729e061860fc71d945b3adc7b91ebb211dcdf3abc8e"
+        primary=m.MEMPOOL_BASES["BCH"]+f"/api/block-height/{height}"
+        blockchair=m.BLOCKCHAIR_BASE+f"/bitcoin-cash/dashboards/block/{height}"
+        fullstack=m.FULLSTACK_BCH_BASE+f"/v6/full-node/blockchain/getBlockHash/{height}"
+        op=FakeOpener({
+            primary: RuntimeError("primary unavailable"),
+            blockchair: RuntimeError("blockchair unavailable"),
+            fullstack: {"blockHash": h},
+        })
+        event=ev("BCH",height,h)
+        event["payoutReward"]=303137009
+        r=m.verify_event(event, opener=op, now="2026-09-19T00:00:00+00:00")
+        self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_BLOCK_MATCH")
+        self.assertEqual(r["verificationStrength"],"BLOCK_HEIGHT_HASH_PUBLIC_NODE_SECOND_FALLBACK")
+        self.assertEqual(r["onchainBlockHash"],h)
+        self.assertAlmostEqual(r["niceHashPayoutRewardNative"],3.03137009,places=8)
+        self.assertIsNone(r["coinbaseRewardNative"])
+        self.assertEqual(r["coinbaseTagClass"],"NOT_CHECKED_FULLSTACK_HASH_ONLY")
+
+    def test_bch_fullstack_hash_conflict_fails_closed(self):
+        height=969090
+        expected="a"*64
+        actual="b"*64
+        primary=m.MEMPOOL_BASES["BCH"]+f"/api/block-height/{height}"
+        blockchair=m.BLOCKCHAIR_BASE+f"/bitcoin-cash/dashboards/block/{height}"
+        fullstack=m.FULLSTACK_BCH_BASE+f"/v6/full-node/blockchain/getBlockHash/{height}"
+        op=FakeOpener({
+            primary: RuntimeError("primary unavailable"),
+            blockchair: RuntimeError("blockchair unavailable"),
+            fullstack: {"blockHash": actual},
+        })
+        r=m.verify_event(ev("BCH",height,expected), opener=op)
+        self.assertEqual(r["status"],"CONFLICT_BLOCK_HASH")
+        self.assertEqual(r["explorer"],m.FULLSTACK_BCH_BASE)
+
     def test_bch_primary_hash_conflict_is_not_hidden_by_fallback(self):
         height=969090
         actual=f"{height:064x}"

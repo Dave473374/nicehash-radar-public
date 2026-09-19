@@ -20,6 +20,7 @@ MAX_RESPONSE_BYTES = 4_000_000
 
 MEMPOOL_BASES = {"BTC": "https://mempool.space", "BCH": "https://bchexplorer.cash"}
 BLOCKCHAIR_BASE = "https://api.blockchair.com"
+FULLSTACK_BCH_BASE = "https://bch.fullstack.cash"
 ZEC_BASE = BLOCKCHAIR_BASE
 KAS_BASE = "https://api.kaspa.org"
 SUPPORTED = {"BTC", "BCH", "ZEC", "KAS"}
@@ -44,7 +45,7 @@ def finite(value):
 
 
 def get(opener, base, path, json_expected=True):
-    if base not in set(MEMPOOL_BASES.values()) | {BLOCKCHAIR_BASE, KAS_BASE}:
+    if base not in set(MEMPOOL_BASES.values()) | {BLOCKCHAIR_BASE, FULLSTACK_BCH_BASE, KAS_BASE}:
         raise ValueError("Explorer host not allowlisted")
     if not path.startswith("/"):
         raise ValueError("Explorer path invalid")
@@ -265,6 +266,61 @@ def verify_bch_blockchair(event, opener, now, primary_error=None):
     }
 
 
+def verify_bch_fullstack_hash(event, opener, now, primary_error=None, blockchair_error=None):
+    """Last-resort BCH verification using a public full-node hash-by-height API.
+
+    This path verifies only that the NiceHash block hash matches the chain hash
+    at the advertised height. It deliberately does not fabricate timestamp,
+    difficulty, reward or coinbase-tag evidence.
+    """
+    result = common(event, now)
+    height = int(event.get("blockHeight"))
+    payload = get(
+        opener,
+        FULLSTACK_BCH_BASE,
+        f"/v6/full-node/blockchain/getBlockHash/{height}",
+    )
+    if not isinstance(payload, dict):
+        raise ValueError("Unexpected FullStack BCH response")
+    block_hash = str(
+        payload.get("blockHash")
+        or payload.get("hash")
+        or ((payload.get("data") or {}).get("blockHash") if isinstance(payload.get("data"), dict) else "")
+        or ""
+    ).lower().strip()
+    if len(block_hash) != 64:
+        raise ValueError("FullStack BCH block hash missing or invalid")
+    expected = str(event.get("blockHash") or "").lower().strip()
+    if len(expected) == 64 and expected != block_hash:
+        return {
+            **result,
+            "schemaVersion": 3,
+            "status": "CONFLICT_BLOCK_HASH",
+            "explorer": FULLSTACK_BCH_BASE,
+            "fallbackFrom": [MEMPOOL_BASES["BCH"], BLOCKCHAIR_BASE],
+            "primaryErrorType": primary_error,
+            "blockchairErrorType": blockchair_error,
+            "onchainBlockHash": block_hash,
+        }
+    return {
+        **result,
+        "schemaVersion": 3,
+        "status": "VERIFIED_ON_CHAIN_BLOCK_MATCH",
+        "verificationStrength": "BLOCK_HEIGHT_HASH_PUBLIC_NODE_SECOND_FALLBACK",
+        "explorer": FULLSTACK_BCH_BASE,
+        "fallbackFrom": [MEMPOOL_BASES["BCH"], BLOCKCHAIR_BASE],
+        "primaryErrorType": primary_error,
+        "blockchairErrorType": blockchair_error,
+        "onchainBlockHash": block_hash,
+        "onchainTimestamp": None,
+        "onchainDifficulty": None,
+        "coinbaseRewardNative": None,
+        "niceHashPayoutRewardNative": payout_native_from_public_reward(event),
+        "payoutToCoinbasePercent": None,
+        "coinbaseTagClass": "NOT_CHECKED_FULLSTACK_HASH_ONLY",
+    }
+
+
 def verify_zec(event, opener, now):
     result = common(event, now)
     height = int(event.get("blockHeight"))
@@ -337,12 +393,21 @@ def verify_event(event, opener=None, now=None):
             try:
                 primary = verify_mempool(event, opener, now)
             except Exception as primary_exc:
-                return verify_bch_blockchair(
-                    event,
-                    opener,
-                    now,
-                    primary_error=type(primary_exc).__name__,
-                )
+                try:
+                    return verify_bch_blockchair(
+                        event,
+                        opener,
+                        now,
+                        primary_error=type(primary_exc).__name__,
+                    )
+                except Exception as blockchair_exc:
+                    return verify_bch_fullstack_hash(
+                        event,
+                        opener,
+                        now,
+                        primary_error=type(primary_exc).__name__,
+                        blockchair_error=type(blockchair_exc).__name__,
+                    )
             # A real primary hash conflict is evidence, not an availability
             # failure, so never hide it behind a fallback.
             return primary

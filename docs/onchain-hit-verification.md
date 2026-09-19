@@ -24,7 +24,7 @@ complete merged-mining proof.
    that archive for research and performs no HTTP requests.
 3. Independent chain evidence:
    - BTC: mempool.space
-   - BCH: bchexplorer.cash primary; Blockchair Bitcoin Cash dashboard fallback when the primary source is unavailable
+   - BCH: bchexplorer.cash primary; Blockchair Bitcoin Cash dashboard first fallback; public FullStack.cash full-node hash-by-height API as a second fallback
    - ZEC: Blockchair Zcash dashboard API
    - KAS: official Kaspa Explorer REST API (`api.kaspa.org`)
 
@@ -63,3 +63,12 @@ BCH value before comparing it with the on-chain reward. This prevents a
 303137009 raw payout from being misread as 303,137,009 BCH.
 
 A hash conflict from the primary source is never hidden by the fallback.
+
+
+### BCH second fallback
+
+If both the primary BCH explorer and Blockchair are unavailable, the verifier
+uses the public FullStack.cash `getBlockHash/:height` full-node endpoint.
+This final fallback verifies only block height/hash. It intentionally leaves
+timestamp, difficulty, block reward and coinbase-tag fields unconfirmed rather
+than inventing them. A hash mismatch remains a hard conflict.
