@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 LEGACY = Path("calibration/global-order-calibration.json")
 EVENTS = Path("calibration/calibration-report.json")
@@ -56,13 +56,14 @@ for signal in SIGNALS:
     e = event_signals.get(signal) or {}
 
     private_orders = int(p.get("orders") or 0)
+    private_known = int(p.get("knownOutcomes") or 0)
     private_hits = int(p.get("hits") or 0)
 
-    if private_orders == 0:
-        private_status = "NO_MATCHED_PRIVATE_EVIDENCE"
-    elif private_orders < 5:
+    if private_known == 0:
+        private_status = "NO_KNOWN_PRIVATE_OUTCOMES"
+    elif private_known < 5:
         private_status = "VERY_SMALL_SAMPLE"
-    elif private_orders < 20:
+    elif private_known < 20:
         private_status = "SMALL_SAMPLE"
     else:
         private_status = "USABLE_SAMPLE"
@@ -76,14 +77,17 @@ for signal in SIGNALS:
         },
         "privateValidation": {
             "orders": private_orders,
+            "knownOutcomes": private_known,
+            "unknownOutcomes": int(p.get("unknownOutcomes") or 0),
             "hits": private_hits,
             "misses": int(p.get("misses") or 0),
             "hitRatePercent": p.get("hitRatePercent"),
             "sampleStatus": private_status,
         },
-        "successfulEventEvidence": {
+        "rewardTimeEventEvidence": {
             "matchedSuccessfulEvents": int(e.get("matched_events") or 0),
-            "note": "Numerator-only evidence; never used as a HIT-rate denominator.",
+            "entryTimeEligible": False,
+            "note": "Reward-time context only; never used as a HIT-rate denominator or entry-time validation.",
         },
     })
 
@@ -91,6 +95,7 @@ market = {
     "snapshotCount": len(market_rows),
     "status": "WARMING_UP",
     "coverageHours": 0.0,
+    "latestAgeMinutes": None,
 }
 
 if market_rows:
@@ -107,15 +112,46 @@ if market_rows:
                 (times[-1] - times[0]).total_seconds() / 3600,
                 2,
             )
-        if len(market_rows) >= 48 and market["coverageHours"] >= 10:
+        now = datetime.now(timezone.utc)
+        latest = times[-1] if times else None
+        if latest is not None:
+            market["latestAgeMinutes"] = round(
+                (now - latest).total_seconds() / 60,
+                2,
+            )
+
+        latest_row = market_rows[-1] if market_rows else {}
+        latest_algorithms = latest_row.get("algorithms") or {}
+        latest_complete = bool(latest_algorithms) and all(
+            isinstance(values, dict)
+            and isinstance(values.get("priceRaw"), (int, float))
+            and isinstance(values.get("orders"), (int, float))
+            and isinstance(values.get("speedRaw"), (int, float))
+            for values in latest_algorithms.values()
+        )
+
+        if (
+            len(market_rows) >= 48
+            and market["coverageHours"] >= 10
+            and market["latestAgeMinutes"] is not None
+            and 0 <= market["latestAgeMinutes"] <= 10
+            and latest_complete
+        ):
             market["status"] = "READY_FOR_CONTEXT"
+        elif (
+            market["latestAgeMinutes"] is not None
+            and market["latestAgeMinutes"] > 10
+        ):
+            market["status"] = "STALE"
+        elif not latest_complete:
+            market["status"] = "INVALID_DATA"
     except Exception:
         pass
 
 private_overall = private.get("overall") or {}
 
 scorecard = {
-    "generatedAt": datetime.utcnow().isoformat() + "Z",
+    "generatedAt": datetime.now(timezone.utc).isoformat(),
     "modelUse": "VALIDATION_ONLY",
     "currentProductionModelChanged": False,
     "privateDataPersistedToRepo": False,
@@ -131,14 +167,15 @@ scorecard = {
         "matchedHits": int(private.get("matchedRewards") or 0),
         "realizedRoiStatus": (
             "AVAILABLE_IN_TRANSIENT_MATCHES"
-            if private_overall.get("totalCostBtc") not in (None, 0)
+            if private_overall.get("totalCostBtcEquivalent") not in (None, 0)
             else "LIMITED"
         ),
         "note": "Transient /tmp only; not committed.",
     },
-    "successfulEventEvidence": {
+    "rewardTimeEventEvidence": {
         "matchedSuccessfulEvents": int(events.get("matched_events_total") or 0),
-        "note": "Separate numerator-only evidence; never combined into order HIT rate.",
+        "entryTimeEligible": False,
+        "note": "Reward-time successful-event context only; never combined into order HIT rate or used as entry-time validation.",
     },
     "publicMarket": market,
     "signals": signal_evidence,
@@ -159,7 +196,7 @@ print("BUY RADAR EVIDENCE VALIDATION")
 print("Legacy matched:", scorecard["legacyEvidence"]["matchedOrders"])
 print("Private matched:", scorecard["privateValidation"]["matchedToRadar"])
 print("Private matched HITs:", scorecard["privateValidation"]["matchedHits"])
-print("Successful event evidence:", scorecard["successfulEventEvidence"]["matchedSuccessfulEvents"])
+print("Reward-time event evidence:", scorecard["rewardTimeEventEvidence"]["matchedSuccessfulEvents"])
 print(
     "Public market:",
     scorecard["publicMarket"]["status"],
@@ -174,7 +211,7 @@ for row in signal_evidence:
         "| legacy=", f"{l['hits']}/{l['orders']}",
         "| private=", f"{p['hits']}/{p['orders']}",
         "| private_sample=", p["sampleStatus"],
-        "| success_events=", row["successfulEventEvidence"]["matchedSuccessfulEvents"],
+        "| reward_time_events=", row["rewardTimeEventEvidence"]["matchedSuccessfulEvents"],
     )
 print("Private data committed: NO")
 print("CURRENT changed: NO")

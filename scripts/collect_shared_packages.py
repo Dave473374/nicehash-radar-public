@@ -5,13 +5,20 @@ from pathlib import Path
 
 from nicehash_private_readonly import get_shared_easymining_orders
 
-rows = get_shared_easymining_orders(
+rows_raw = get_shared_easymining_orders(
     page=0,
     limit=100,
     sort_dir="ASC",
     sort_field="createdTs",
     only_gold=False,
 )
+
+rows = [
+    row
+    for row in rows_raw
+    if isinstance(row, dict) and row.get("isPublic") is True
+]
+
 collected_at = datetime.now(timezone.utc).isoformat()
 
 history_path = Path("calibration/shared-package-history.jsonl")
@@ -127,7 +134,8 @@ snapshot_path.write_text(
     )
 )
 
-print("ACTIVE SHARED PACKAGES", len(rows))
+print("PUBLIC ACTIVE SHARED PACKAGES", len(rows))
+print("NONPUBLIC SHARED ROWS EXCLUDED", len(rows_raw) - len(rows))
 print("PREVIOUS ACTIVE PACKAGES", len(previous_ids))
 print("NEW STATES SAVED", len(new_records))
 print("NEW DISAPPEARED", len(disappeared_records))

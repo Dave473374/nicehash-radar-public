@@ -84,6 +84,7 @@ jobs:
               edge = event.get("edgeShadow") or {}
               market = event.get("publicMarket") or {}
               freshness = event.get("freshness") or {}
+              math_check = event.get("mathConsistency") or {}
 
               edge_label = edge.get("label") or "UNKNOWN"
               edge_score = edge.get("score")
@@ -120,6 +121,7 @@ jobs:
                   cost_text = "cost n/a"
 
               batch = event.get("batchOpportunity") or {}
+              math_status = math_check.get("status") or "UNKNOWN"
 
               if event_type == "BATCH_OPPORTUNITY":
                   streak = batch.get("confirmationStreak")
@@ -131,7 +133,7 @@ jobs:
                       (
                           f"Q24 {signed(event.get('qualityVs24hPercent'))} · "
                           f"Q7 {signed(event.get('qualityVs7dPercent'))} · "
-                          f"EDGE {edge_text}"
+                          f"EDGE {edge_text} · MATH {math_status}"
                       ),
                       (
                           f"{market_text} · confirmed {streak} snapshots"
@@ -150,7 +152,7 @@ jobs:
                       (
                           f"Q24 {signed(event.get('qualityVs24hPercent'))} · "
                           f"Q7 {signed(event.get('qualityVs7dPercent'))} · "
-                          f"EDGE {edge_text}"
+                          f"EDGE {edge_text} · MATH {math_status}"
                       ),
                       market_text,
                       (

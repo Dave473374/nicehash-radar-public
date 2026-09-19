@@ -23,6 +23,9 @@ BATCH_MIN_Q24_PERCENT = 10.0
 BATCH_MIN_Q7_PERCENT = 5.0
 BATCH_SIGNALS = {"BUY NOW", "STRONG BUY"}
 
+MARKET_MAX_AGE_MINUTES = 10.0
+FUTURE_TIME_TOLERANCE_MINUTES = 1.0
+
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
@@ -112,8 +115,24 @@ def public_market_context(package, now):
 
     samples.sort(key=lambda item: item[0])
     latest_ts, latest = samples[-1]
+    age_minutes = (now - latest_ts).total_seconds() / 60
+
+    required_fields = ("priceRaw", "orders", "speedRaw")
+    latest_complete = all(
+        isinstance(latest.get(key), (int, float))
+        for key in required_fields
+    )
+
     cutoff = now - timedelta(hours=24)
-    recent = [(ts, data) for ts, data in samples if ts >= cutoff]
+    recent = [
+        (ts, data)
+        for ts, data in samples
+        if ts >= cutoff
+        and all(
+            isinstance(data.get(key), (int, float))
+            for key in required_fields
+        )
+    ]
 
     price_values = [data.get("priceRaw") for _, data in recent]
     order_values = [data.get("orders") for _, data in recent]
@@ -125,14 +144,25 @@ def public_market_context(package, now):
             recent[-1][0] - recent[0][0]
         ).total_seconds() / 3600
 
-    ready = len(recent) >= 48 and coverage_hours >= 10
+    if age_minutes < -FUTURE_TIME_TOLERANCE_MINUTES:
+        status = "INVALID_FUTURE"
+    elif age_minutes > MARKET_MAX_AGE_MINUTES:
+        status = "STALE"
+    elif not latest_complete:
+        status = "INVALID_DATA"
+    elif len(recent) >= 48 and coverage_hours >= 10:
+        status = "READY"
+    else:
+        status = "WARMING_UP"
+
+    ready = status == "READY"
 
     return {
-        "status": "READY" if ready else "WARMING_UP",
+        "status": status,
         "role": "INFORMATIONAL_ONLY",
         "algorithm": algorithm,
         "collectedAt": latest_ts.isoformat(),
-        "ageMinutes": round((now - latest_ts).total_seconds() / 60, 1),
+        "ageMinutes": round(age_minutes, 1),
         "speedUnit": latest.get("speedUnit"),
         "orders": latest.get("orders"),
         "rigs": latest.get("rigs"),
@@ -177,12 +207,14 @@ def feed_freshness(feed, now):
 
     if feed_checked_at is not None:
         feed_age_minutes = round(
-            max(0.0, (now - feed_checked_at).total_seconds() / 60),
+            (now - feed_checked_at).total_seconds() / 60,
             1,
         )
 
     if feed_age_minutes is None:
         status = "UNKNOWN"
+    elif feed_age_minutes < -FUTURE_TIME_TOLERANCE_MINUTES:
+        status = "INVALID_FUTURE"
     elif feed_age_minutes <= 7:
         status = "FRESH"
     elif feed_age_minutes <= 15:
@@ -197,10 +229,19 @@ def feed_freshness(feed, now):
     }
 
 
+def feed_snapshot_id(feed):
+    checked_at = str(feed.get("checked_at") or "")
+    history_key = str(feed.get("history_key") or "")
+    if checked_at or history_key:
+        return checked_at + "|" + history_key
+    return None
+
+
 def batch_assessment(package, now, feed):
     profitability = package.get("profitability") or {}
     history = package.get("history_trend") or {}
     edge = package.get("edge_shadow") or {}
+    math_shadow = package.get("math_consistency_shadow") or {}
 
     signal = str(package.get("final_signal") or "UNKNOWN")
     priority = purchase_priority(package)
@@ -232,6 +273,10 @@ def batch_assessment(package, now, feed):
         ),
         "marketReady": market.get("status") == "READY",
         "freshData": freshness.get("status") == "FRESH",
+        "uniqueFeedSnapshot": feed_snapshot_id(feed) is not None,
+        "mathConsistency": (
+            math_shadow.get("status") in {"PASS", "NOT_APPLICABLE"}
+        ),
     }
 
     return {
@@ -258,6 +303,7 @@ def package_alert_payload(package, previous_signal, now, feed):
     primary = package.get("primary_chain") or {}
     nicehash_odds = package.get("nicehash_odds") or {}
     edge = package.get("edge_shadow") or {}
+    math_shadow = package.get("math_consistency_shadow") or {}
     market = public_market_context(package, now)
 
     freshness = feed_freshness(feed, now)
@@ -306,6 +352,12 @@ def package_alert_payload(package, previous_signal, now, feed):
             "productionOverride": edge.get("production_override") is True,
         },
         "publicMarket": market,
+        "mathConsistency": {
+            "status": math_shadow.get("status"),
+            "productionOverride": (
+                math_shadow.get("production_override") is True
+            ),
+        },
         "freshness": freshness,
         "relayVersion": feed.get("relay_version"),
         "decisionEngine": feed.get("decision_engine"),
@@ -350,6 +402,14 @@ for package in packages:
     package_state = state["packages"].get(name) or {}
     previous_signal = package_state.get("lastObservedSignal")
 
+    freshness = feed_freshness(feed, now_dt)
+    feed_id = feed_snapshot_id(feed)
+
+    # A stale, delayed, future-dated or unidentified feed must not mutate
+    # signal dedupe state or BATCH confirmation state.
+    if freshness.get("status") != "FRESH" or feed_id is None:
+        continue
+
     changed = previous_signal != current_signal
     actionable = current_signal in ACTIONABLE_SIGNALS
 
@@ -368,14 +428,21 @@ for package in packages:
 
     batch = batch_assessment(package, now_dt, feed)
     previous_streak = int(package_state.get("batchCandidateStreak") or 0)
+    last_candidate_feed_id = package_state.get("lastBatchCandidateFeedId")
 
     if batch["candidate"]:
-        current_streak = previous_streak + 1
+        if feed_id != last_candidate_feed_id:
+            current_streak = previous_streak + 1
+            package_state["lastBatchCandidateFeedId"] = feed_id
+        else:
+            current_streak = previous_streak
     else:
         current_streak = 0
         package_state["batchActive"] = False
+        package_state["lastBatchCandidateFeedId"] = feed_id
 
     batch["confirmationStreak"] = current_streak
+    batch["feedSnapshotId"] = feed_id
     batch_confirmed = (
         batch["candidate"]
         and current_streak >= BATCH_CONFIRMATION_SNAPSHOTS
@@ -401,6 +468,17 @@ STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 STATE_FILE.write_text(
     json.dumps(state, indent=2, ensure_ascii=False) + "\n",
     encoding="utf-8",
+)
+
+events.sort(
+    key=lambda event: (
+        0 if event.get("purchasePriority") == "PRIMARY" else 1,
+        -(
+            event.get("edgeShadow", {}).get("score")
+            if isinstance(event.get("edgeShadow", {}).get("score"), (int, float))
+            else -999999
+        ),
+    )
 )
 
 OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -435,7 +513,10 @@ OUT_FILE.write_text(
                     "minQ24Percent": BATCH_MIN_Q24_PERCENT,
                     "minQ7Percent": BATCH_MIN_Q7_PERCENT,
                     "marketMustBeReady": True,
+                    "marketMaxAgeMinutes": MARKET_MAX_AGE_MINUTES,
                     "dataMustBeFresh": True,
+                    "uniqueFeedSnapshotsRequired": True,
+                    "mathConsistencyMustPassWhenApplicable": True,
                 },
             },
         },
@@ -443,17 +524,6 @@ OUT_FILE.write_text(
         ensure_ascii=False,
     ) + "\n",
     encoding="utf-8",
-)
-
-events.sort(
-    key=lambda event: (
-        0 if event.get("purchasePriority") == "PRIMARY" else 1,
-        -(
-            event.get("edgeShadow", {}).get("score")
-            if isinstance(event.get("edgeShadow", {}).get("score"), (int, float))
-            else -999999
-        ),
-    )
 )
 
 if events:

@@ -16,6 +16,12 @@ jobs:
           python-version: "3.12"
       - run: pip install requests
 
+      - name: Enforce Admin prohibition before credentials
+        run: python3 scripts/check_forbidden_admin_access.py
+
+      - name: Enforce private API read-only policy before credentials
+        run: python3 scripts/check_private_api_policy.py
+
       - name: Fetch personal EasyMining history read-only
         env:
           NICEHASH_API_KEY: ${{ secrets.NICEHASH_API_KEY }}
@@ -30,8 +36,3 @@ jobs:
       - name: Build transient multi-source evidence scorecard
         run: python3 scripts/build_evidence_scorecard.py
 
-      - name: Enforce Admin prohibition
-        run: python3 scripts/check_forbidden_admin_access.py
-
-      - name: Enforce private API read-only policy
-        run: python3 scripts/check_private_api_policy.py

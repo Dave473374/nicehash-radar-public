@@ -1,0 +1,55 @@
+name: Phase 0 Correctness Regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/build_alert_events.py"
+      - "scripts/match_private_orders.py"
+      - "scripts/match_mining_events.py"
+      - "scripts/apply_math_consistency_shadow.py"
+      - "scripts/nicehash_private_readonly.py"
+      - "scripts/collect_shared_packages.py"
+      - "scripts/build_evidence_scorecard.py"
+      - "scripts/test_phase0_correctness.py"
+      - ".github/workflows/phase0-correctness-regression.yml"
+      - ".github/workflows/update-buy-feed.yml"
+      - ".github/workflows/phase3-buy-radar-alerts.yml"
+      - ".github/workflows/validate-buy-radar-evidence.yml"
+      - ".github/workflows/test-nicehash-private.yml"
+      - ".github/workflows/collect-shared-packages.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  correctness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile correctness-critical Python
+        run: |
+          python3 -m py_compile \
+            scripts/build_alert_events.py \
+            scripts/match_private_orders.py \
+            scripts/match_mining_events.py \
+            scripts/apply_math_consistency_shadow.py \
+            scripts/nicehash_private_readonly.py \
+            scripts/collect_shared_packages.py \
+            scripts/build_evidence_scorecard.py \
+            scripts/test_phase0_correctness.py
+
+      - name: Run Phase 0 regression scenarios
+        run: python3 scripts/test_phase0_correctness.py
+      - name: Enforce Admin prohibition
+        run: python3 scripts/check_forbidden_admin_access.py
+      - name: Enforce private API read-only policy
+        run: python3 scripts/check_private_api_policy.py
