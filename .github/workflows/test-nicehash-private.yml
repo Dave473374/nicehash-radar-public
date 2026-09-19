@@ -1,1 +1,89 @@
-{"name":"Test NiceHash Private API","on":{"workflow_dispatch":{}},"jobs":{"test":{"runs-on":"ubuntu-latest","steps":[{"uses":"actions/checkout@v4"},{"uses":"actions/setup-python@v5","with":{"python-version":"3.x"}},{"name":"Install requests","run":"pip install requests"},{"name":"Enforce Admin prohibition before credentials","run":"python3 scripts/check_forbidden_admin_access.py"},{"name":"Enforce private API read-only policy before credentials","run":"python3 scripts/check_private_api_policy.py"},{"name":"Fetch completed EasyMining orders","env":{"NICEHASH_API_KEY":"${{ secrets.NICEHASH_API_KEY }}","NICEHASH_API_SECRET":"${{ secrets.NICEHASH_API_SECRET }}","NICEHASH_ORG_ID":"${{ secrets.NICEHASH_ORG_ID }}","PRIVATE_EASYMINING_MAX_PAGES":"10"},"run":"python3 scripts/collect_completed_orders.py"},{"name":"Inspect reward fields","run":"python3 scripts/test_order_variants.py"}]}}}
+name: Test NiceHash Private API
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/nicehash_private_readonly.py
+      - scripts/collect_completed_orders.py
+      - scripts/test_order_variants.py
+      - scripts/match_private_orders.py
+      - scripts/match_private_orders_market_context.py
+      - tests/test_private_order_market_context.py
+      - .github/workflows/test-nicehash-private.yml
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Enforce Admin prohibition
+        run: python3 scripts/check_forbidden_admin_access.py
+      - name: Enforce private API read-only policy
+        run: python3 scripts/check_private_api_policy.py
+      - name: Test private entry market-context logic without credentials
+        run: python3 -m unittest tests.test_private_order_market_context -v
+
+  private:
+    needs: offline
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install requests
+        run: pip install requests
+      - name: Recheck Admin prohibition before credentials
+        run: python3 scripts/check_forbidden_admin_access.py
+      - name: Recheck private API read-only policy before credentials
+        run: python3 scripts/check_private_api_policy.py
+      - name: Fetch completed EasyMining orders into ephemeral runner storage
+        env:
+          NICEHASH_API_KEY: ${{ secrets.NICEHASH_API_KEY }}
+          NICEHASH_API_SECRET: ${{ secrets.NICEHASH_API_SECRET }}
+          NICEHASH_ORG_ID: ${{ secrets.NICEHASH_ORG_ID }}
+          PRIVATE_EASYMINING_MAX_PAGES: '10'
+        run: python3 scripts/collect_completed_orders.py
+      - name: Inspect sanitized structure without private values
+        run: python3 scripts/test_order_variants.py
+      - name: Build entry-time HIT MISS ROI calibration without logging metrics
+        run: python3 scripts/match_private_orders.py > /tmp/private-order-match.log
+      - name: Join entries to public market edge context
+        run: python3 scripts/match_private_orders_market_context.py
+      - name: Validate ephemeral outputs without printing private results
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for path in (
+              Path('/tmp/nicehash-completed-orders.json'),
+              Path('/tmp/private-order-matches.json'),
+              Path('/tmp/private-order-market-context.json'),
+          ):
+              value = json.loads(path.read_text(encoding='utf-8'))
+              assert isinstance(value, dict)
+          print('PRIVATE ENTRY MARKET ANALYSIS COMPLETE')
+          print('Detailed order, HIT/MISS, ROI and timestamp data were not printed or uploaded.')
+          PY
+      - name: Remove ephemeral private files
+        if: always()
+        shell: bash
+        run: |
+          rm -f /tmp/nicehash-completed-orders.json
+          rm -f /tmp/private-order-matches.json
+          rm -f /tmp/private-order-market-context.json
+          rm -f /tmp/private-order-match.log
