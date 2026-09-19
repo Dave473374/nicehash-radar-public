@@ -82,13 +82,13 @@ jobs:
           raw = json.loads(Path('/tmp/nicehash-completed-orders.json').read_text(encoding='utf-8'))
           matched = json.loads(Path('/tmp/private-order-matches.json').read_text(encoding='utf-8'))
           result = json.loads(Path('/tmp/private-order-market-context.json').read_text(encoding='utf-8'))
+          summary = result.get('preEntryFeatureSummary') or {}
+          allowed = {'Palladium S', 'Palladium M', 'Palladium L', 'Team Palladium'}
           skip_by_package = {
               key: value
               for key, value in (matched.get('skipReasonsByPackage') or {}).items()
               if any(key.startswith(package + '|') for package in allowed)
           }
-          summary = result.get('preEntryFeatureSummary') or {}
-          allowed = {'Palladium S', 'Palladium M', 'Palladium L', 'Team Palladium'}
 
           def outcome(value):
               return 'HIT' if value is True else 'MISS' if value is False else 'UNKNOWN'
