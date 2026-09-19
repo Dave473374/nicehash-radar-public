@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-19T10:46:01.198861+00:00",
+  "role": "PHONE_DELIVERY_LATENCY_RESEARCH_ONLY",
+  "currentProductionModelChanged": false,
+  "canRaiseBuySignal": false,
+  "automaticPurchase": false,
+  "source": "calibration/radar-snapshots.jsonl",
+  "inputCounts": {
+    "lateCapture": 299,
+    "conflictingSnapshot": 1
+  },
+  "status": "INSUFFICIENT_EVIDENCE",
+  "fiveMinutePushRecommended": false,
+  "verdict": "KEEP_HOURLY_FOR_NOW",
+  "reason": "Need at least 3 resolved verified PRIMARY BUY NOW/STRONG BUY windows before changing delivery infrastructure.",
+  "currentRegime": {
+    "relayVersion": "2.9.0",
+    "decisionEngine": "PROFITABILITY_AND_BREAK_EVEN_GATED_MINING_QUALITY_VS_HISTORY"
+  },
+  "lookbackDays": 7,
+  "resolvedWindowCount": 1,
+  "shortWindowCount": 1,
+  "veryShortStrongWindowCount": 1,
+  "shortWindowRate": 1.0,
+  "thresholds": {
+    "minimumResolvedWindows": 3,
+    "shortWindowMaxMinutes": 45.0,
+    "minimumShortWindows": 2,
+    "minimumShortRate": 0.5,
+    "veryShortStrongMaxMinutes": 30.0,
+    "minimumExpectedReturnPercent": 95.0,
+    "mathStatusesAccepted": [
+      "NOT_APPLICABLE",
+      "PASS"
+    ],
+    "signalsAccepted": [
+      "BUY NOW",
+      "STRONG BUY"
+    ],
+    "primaryOnly": true
+  },
+  "windows": [
+    {
+      "package": "Silver S",
+      "startAt": "2026-09-19T07:30:59.443000+00:00",
+      "lastQualifiedAt": "2026-09-19T07:30:59.443000+00:00",
+      "maxSignal": "STRONG BUY",
+      "minEvPercent": 103.9834,
+      "status": "RESOLVED",
+      "closureReason": "NEXT_VALID_SNAPSHOT_NOT_QUALIFIED",
+      "endAt": "2026-09-19T07:41:24.992000+00:00",
+      "observedLowerBoundMinutes": 0.0,
+      "observedUpperBoundMinutes": 10.426
+    }
+  ],
+  "limitations": [
+    "This is infrastructure evidence, not a BUY signal and not a profitability backtest.",
+    "Only PRIMARY BUY NOW/STRONG BUY windows with EV >=95% and MATH PASS/N/A can trigger the recommendation.",
+    "GOOD, WARNING, CRITICAL and UNKNOWN math states do not justify a faster-push recommendation.",
+    "Window duration is bounded by observed snapshots; data gaps are censored rather than guessed.",
+    "A short window means hourly polling can miss it; it does not prove a particular historical phone check actually missed it."
+  ]
+}
