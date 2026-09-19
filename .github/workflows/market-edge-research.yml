@@ -21,6 +21,10 @@ on:
       - tests/test_market_lag_integrity.py
       - scripts/build_alert_latency_report.py
       - tests/test_market_alert_latency.py
+      - scripts/build_verified_hit_market_context.py
+      - tests/test_verified_hit_market_context.py
+      - docs/verified-hit-market-context.md
+      - research/onchain-hit-verification.jsonl
       - docs/alert-latency-policy.md
       - docs/lag-evidence-integrity.md
       - research/lag-protocol-v1.json
@@ -42,6 +46,10 @@ on:
       - tests/test_market_lag_integrity.py
       - scripts/build_alert_latency_report.py
       - tests/test_market_alert_latency.py
+      - scripts/build_verified_hit_market_context.py
+      - tests/test_verified_hit_market_context.py
+      - docs/verified-hit-market-context.md
+      - research/onchain-hit-verification.jsonl
       - docs/alert-latency-policy.md
       - docs/lag-evidence-integrity.md
       - research/lag-protocol-v1.json
@@ -72,6 +80,7 @@ jobs:
       - name: Test research and Phase 0 without network or account credentials
         run: |
           python3 -m unittest discover -s tests -p 'test_market*.py' -v
+          python3 -m unittest tests.test_verified_hit_market_context -v
           python3 scripts/test_phase0_correctness.py
       - name: Analyze existing public files only
         run: |
@@ -84,6 +93,11 @@ jobs:
             --previous-controls research/lag-controls.jsonl --controls /tmp/lag-controls.jsonl \
             --episodes /tmp/lag-episodes.jsonl --output /tmp/lag-report.json
           python3 scripts/build_alert_latency_report.py --output /tmp/alert-latency-report.json
+          python3 scripts/build_verified_hit_market_context.py \
+            --pairs /tmp/market-edge-pairs.jsonl \
+            --episodes /tmp/lag-episodes.jsonl \
+            --output /tmp/verified-hit-market-context.jsonl \
+            --report /tmp/verified-hit-market-context-report.json
       - uses: actions/upload-artifact@v4
         with:
           name: market-edge-research-${{ github.run_id }}
@@ -95,6 +109,8 @@ jobs:
             /tmp/lag-controls.jsonl
             /tmp/lag-report.json
             /tmp/alert-latency-report.json
+            /tmp/verified-hit-market-context.jsonl
+            /tmp/verified-hit-market-context-report.json
           retention-days: 7
           if-no-files-found: error
 
@@ -121,17 +137,19 @@ jobs:
           python3 scripts/check_forbidden_admin_access.py
           python3 scripts/check_private_api_policy.py
           python3 -m unittest discover -s tests -p 'test_market*.py'
+          python3 -m unittest tests.test_verified_hit_market_context
       - name: Build report without changing source feeds
         run: |
           python3 scripts/build_market_edge_research.py
           python3 scripts/diagnose_market_inputs.py
           python3 scripts/build_lag_episodes.py
           python3 scripts/build_alert_latency_report.py
+          python3 scripts/build_verified_hit_market_context.py
       - name: Persist only public research outputs
         run: |
           git config user.name 'NiceHash Radar Bot'
           git config user.email 'actions@github.com'
-          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-controls.jsonl research/lag-report.json research/alert-latency-report.json
+          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-controls.jsonl research/lag-report.json research/alert-latency-report.json research/verified-hit-market-context.jsonl research/verified-hit-market-context-report.json
           git diff --cached --quiet && exit 0
           git commit -m 'Update public market research (no decision changes)'
           for attempt in 1 2 3; do
