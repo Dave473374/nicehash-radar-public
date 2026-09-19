@@ -5,205 +5,277 @@ SNAPSHOTS_FILE = "calibration/radar-snapshots.jsonl"
 EVENTS_FILE = "mining-events.json"
 OUTPUT_FILE = "calibration/mining-event-matches.jsonl"
 
+# Reward events describe context near the successful reward time only.
+# They must never be treated as entry-time evidence or a MISS denominator.
+MAX_REWARD_CONTEXT_AGE_SECONDS = 15 * 60
+
+
+def parse_time(value):
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
+def event_time(event):
+    value = event.get("time")
+    if not value:
+        return None
+    return datetime.fromtimestamp(
+        value / 1000,
+        tz=timezone.utc,
+    )
+
+
 snapshots = [
-json.loads(x)
-for x in open(SNAPSHOTS_FILE, encoding="utf-8")
-if x.strip()
+    json.loads(line)
+    for line in open(SNAPSHOTS_FILE, encoding="utf-8")
+    if line.strip()
 ]
 
-events = json.load(
-open(EVENTS_FILE, encoding="utf-8")
+events = json.load(open(EVENTS_FILE, encoding="utf-8"))
+
+snapshot_times = []
+for snapshot in snapshots:
+    ts = parse_time(snapshot.get("collected_at"))
+    if ts is not None:
+        snapshot_times.append((ts, snapshot))
+
+snapshot_times.sort(key=lambda item: item[0])
+
+
+def reward_context_snapshot(at):
+    if at is None:
+        return None
+
+    candidates = [
+        (ts, snapshot)
+        for ts, snapshot in snapshot_times
+        if ts <= at
+        and (at - ts).total_seconds()
+        <= MAX_REWARD_CONTEXT_AGE_SECONDS
+    ]
+
+    if not candidates:
+        return None
+
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def package_for(snapshot, name):
+    if snapshot is None:
+        return None
+    return next(
+        (
+            package
+            for package in snapshot.get("feed", {}).get("packages", [])
+            if package.get("name") == name
+        ),
+        None,
+    )
+
+
+records = []
+
+for event in events:
+    at = event_time(event)
+    if at is None:
+        continue
+
+    snapshot = reward_context_snapshot(at)
+    package = package_for(snapshot, event.get("packageName"))
+
+    snapshot_ts = (
+        parse_time(snapshot.get("collected_at"))
+        if snapshot is not None
+        else None
+    )
+
+    record = {
+        "event_id": event.get("eventId"),
+        "event_time": event.get("time"),
+        "package_id": event.get("packageId"),
+        "package_name": event.get("packageName"),
+        "coins": event.get("coins"),
+        "reward_count": event.get("rewardCount"),
+        "merged_mining": event.get("mergedMining"),
+        "total_payout_reward_btc": event.get("totalPayoutRewardBtc"),
+        "rewards": event.get("rewards"),
+        "evidence_role": "REWARD_TIME_CONTEXT_ONLY",
+        "entry_time_eligible": False,
+        "can_supply_miss_denominator": False,
+        "snapshot_found": snapshot is not None,
+        "package_match_found": package is not None,
+        "radar_matched": snapshot is not None and package is not None,
+        "snapshot_time": (
+            snapshot.get("collected_at")
+            if snapshot is not None
+            else None
+        ),
+        "snapshot_age_seconds": (
+            round((at - snapshot_ts).total_seconds(), 1)
+            if snapshot_ts is not None
+            else None
+        ),
+        "price_btc": (
+            package.get("price_btc")
+            if package is not None
+            else None
+        ),
+        "primary_coin": (
+            (package.get("primary_chain") or {}).get("currency")
+            if package is not None
+            else None
+        ),
+        "merge_coin": (
+            (package.get("merge_chain") or {}).get("currency")
+            if package is not None
+            and package.get("merge_chain")
+            else None
+        ),
+        "mining_signal": (
+            package.get("mining_signal")
+            if package is not None
+            else None
+        ),
+        "economic_signal": (
+            package.get("economic_signal")
+            if package is not None
+            else None
+        ),
+        "final_signal": (
+            package.get("final_signal")
+            if package is not None
+            else None
+        ),
+        "decision": (
+            package.get("decision")
+            if package is not None
+            else None
+        ),
+        "expected_blocks": (
+            (package.get("primary_chain") or {}).get("expected_blocks")
+            if package is not None
+            else None
+        ),
+        "model_hit_probability_percent": (
+            (package.get("primary_chain") or {}).get(
+                "model_hit_probability_percent"
+            )
+            if package is not None
+            else None
+        ),
+        "nicehash_odds": (
+            (package.get("nicehash_odds") or {}).get("display")
+            if package is not None
+            else None
+        ),
+        "expected_reward_btc_equiv": (
+            (package.get("profitability") or {}).get(
+                "expected_reward_btc_equiv"
+            )
+            if package is not None
+            else None
+        ),
+        "expected_return_percent": (
+            (package.get("profitability") or {}).get(
+                "expected_return_percent"
+            )
+            if package is not None
+            else None
+        ),
+        "profitability_margin_percent": (
+            (package.get("profitability") or {}).get(
+                "profitability_margin_percent"
+            )
+            if package is not None
+            else None
+        ),
+        "break_even_block_target": (
+            (package.get("profitability") or {}).get(
+                "break_even_block_target"
+            )
+            if package is not None
+            else None
+        ),
+        "break_even_multiple_vs_expected_blocks": (
+            (package.get("profitability") or {}).get(
+                "break_even_multiple_vs_expected_blocks"
+            )
+            if package is not None
+            else None
+        ),
+        "break_even_probability_percent": (
+            (package.get("profitability") or {}).get(
+                "break_even_probability_percent_approx"
+            )
+            if package is not None
+            else None
+        ),
+        "break_even_risk": (
+            (package.get("profitability") or {})
+            .get("break_even_risk", {})
+            .get("status")
+            if package is not None
+            else None
+        ),
+        "break_even_cap": (
+            (package.get("profitability") or {})
+            .get("break_even_risk", {})
+            .get("max_final_signal")
+            if package is not None
+            else None
+        ),
+        "quality_vs_24h_percent": (
+            (package.get("history_trend") or {}).get(
+                "expected_blocks_per_btc_vs_24h_percent"
+            )
+            if package is not None
+            else None
+        ),
+        "quality_vs_7d_percent": (
+            (package.get("history_trend") or {}).get(
+                "expected_blocks_per_btc_vs_7d_percent"
+            )
+            if package is not None
+            else None
+        ),
+        "history_samples_24h": (
+            (package.get("history_trend") or {}).get("sample_count_24h")
+            if package is not None
+            else None
+        ),
+        "history_samples_7d": (
+            (package.get("history_trend") or {}).get("sample_count_7d")
+            if package is not None
+            else None
+        ),
+    }
+
+    records.append(record)
+
+open(OUTPUT_FILE, "w", encoding="utf-8").write(
+    "".join(
+        json.dumps(record, separators=(",", ":")) + "\n"
+        for record in records
+    )
 )
 
-parse_time = lambda x: datetime.fromisoformat(
-x.replace("Z", "+00:00")
-)
-
-snapshot_times = [
-(parse_time(s["collected_at"]), s)
-for s in snapshots
-]
-
-event_time = lambda e: datetime.fromtimestamp(
-(e.get("time") or 0) / 1000,
-tz=timezone.utc
-)
-
-latest_snapshot = lambda t: max(
-((st, s) for st, s in snapshot_times if st <= t),
-default=(None, None),
-key=lambda x: x[0]
-if x[0] is not None
-else datetime.min.replace(tzinfo=timezone.utc)
-)[1]
-
-package_for = lambda s, name: next(
-(
-p
-for p in s.get("feed", {}).get("packages", [])
-if p.get("name") == name
-),
-None
-)
-
-pairs = [
-(e, latest_snapshot(event_time(e)))
-for e in events
-if e.get("time")
-]
-
-triples = [
-(
-e,
-s,
-package_for(s, e.get("packageName"))
-if s is not None
-else None
-)
-for e, s in pairs
-]
-
-records = [
-{
-"event_id": e.get("eventId"),
-"event_time": e.get("time"),
-"package_id": e.get("packageId"),
-"package_name": e.get("packageName"),
-"coins": e.get("coins"),
-"reward_count": e.get("rewardCount"),
-"merged_mining": e.get("mergedMining"),
-"total_payout_reward_btc": e.get("totalPayoutRewardBtc"),
-"rewards": e.get("rewards"),
-
-"snapshot_found": s is not None,
-"package_match_found": p is not None,
-"radar_matched": s is not None and p is not None,
-
-"snapshot_time": s.get("collected_at")
-if s is not None
-else None,
-
-"snapshot_age_seconds": round(
-(event_time(e) - parse_time(s.get("collected_at"))).total_seconds(),
-1
-)
-if s is not None
-else None,
-
-"price_btc": p.get("price_btc")
-if p is not None
-else None,
-
-"primary_coin": p.get("primary_chain", {}).get("currency")
-if p is not None
-else None,
-
-"merge_coin": (
-p.get("merge_chain", {}).get("currency")
-if p is not None and p.get("merge_chain")
-else None
-),
-
-"mining_signal": p.get("mining_signal")
-if p is not None
-else None,
-
-"economic_signal": p.get("economic_signal")
-if p is not None
-else None,
-
-"final_signal": p.get("final_signal")
-if p is not None
-else None,
-
-"decision": p.get("decision")
-if p is not None
-else None,
-
-"expected_blocks": p.get("primary_chain", {}).get("expected_blocks")
-if p is not None
-else None,
-
-"model_hit_probability_percent": p.get("primary_chain", {}).get("model_hit_probability_percent")
-if p is not None
-else None,
-
-"nicehash_odds": p.get("nicehash_odds", {}).get("display")
-if p is not None
-else None,
-
-"expected_reward_btc_equiv": p.get("profitability", {}).get("expected_reward_btc_equiv")
-if p is not None
-else None,
-
-"expected_return_percent": p.get("profitability", {}).get("expected_return_percent")
-if p is not None
-else None,
-
-"profitability_margin_percent": p.get("profitability", {}).get("profitability_margin_percent")
-if p is not None
-else None,
-
-"break_even_block_target": p.get("profitability", {}).get("break_even_block_target")
-if p is not None
-else None,
-
-"break_even_multiple_vs_expected_blocks": p.get("profitability", {}).get("break_even_multiple_vs_expected_blocks")
-if p is not None
-else None,
-
-"break_even_probability_percent": p.get("profitability", {}).get("break_even_probability_percent_approx")
-if p is not None
-else None,
-
-"break_even_risk": p.get("profitability", {}).get("break_even_risk", {}).get("status")
-if p is not None
-else None,
-
-"break_even_cap": p.get("profitability", {}).get("break_even_risk", {}).get("max_final_signal")
-if p is not None
-else None,
-
-"quality_vs_24h_percent": p.get("history_trend", {}).get("expected_blocks_per_btc_vs_24h_percent")
-if p is not None
-else None,
-
-"quality_vs_7d_percent": p.get("history_trend", {}).get("expected_blocks_per_btc_vs_7d_percent")
-if p is not None
-else None,
-
-"history_samples_24h": p.get("history_trend", {}).get("sample_count_24h")
-if p is not None
-else None,
-
-"history_samples_7d": p.get("history_trend", {}).get("sample_count_7d")
-if p is not None
-else None
-}
-for e, s, p in triples
-]
-
-open(
-OUTPUT_FILE,
-"w",
-encoding="utf-8"
-).write(
-"".join(
-json.dumps(r, separators=(",", ":")) + "\n"
-for r in records
-)
-)
-
+print("REWARD-TIME CONTEXT MATCHING")
 print("Radar snapshots:", len(snapshots))
 print("Mining events:", len(events))
 print("Events written:", len(records))
-print("Radar matched events:", sum(r.get("radar_matched") is True for r in records))
-print("Unmatched events:", sum(r.get("radar_matched") is False for r in records))
-print("Merged mining events:", sum(r.get("merged_mining") is True for r in records))
-print("Merged radar matches:", sum(
-r.get("merged_mining") is True and r.get("radar_matched") is True
-for r in records
-))
-print("Merged event details:", json.dumps([{"event_id": r.get("event_id"), "package_name": r.get("package_name"), "coins": r.get("coins"), "reward_count": r.get("reward_count"), "snapshot_found": r.get("snapshot_found"), "package_match_found": r.get("package_match_found"), "radar_matched": r.get("radar_matched")} for r in records if r.get("merged_mining") is True], ensure_ascii=False))
-print("Merged snapshot packages:", json.dumps([{"event_id": e.get("eventId"), "event_time": e.get("time"), "event_package": e.get("packageName"), "snapshot_time": s.get("collected_at") if s is not None else None, "snapshot_packages": [p0.get("name") for p0 in s.get("feed", {}).get("packages", [])] if s is not None else []} for e, s, p in triples if e.get("mergedMining") is True], ensure_ascii=False))
-print("Output:", OUTPUT_FILE)
+print(
+    "Fresh reward-context matches:",
+    sum(record.get("radar_matched") is True for record in records),
+)
+print(
+    "Entry-time eligible:",
+    sum(record.get("entry_time_eligible") is True for record in records),
+)
+print("MISS denominator supplied: NO")
