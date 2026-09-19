@@ -89,6 +89,11 @@ jobs:
               for key, value in (matched.get('skipReasonsByPackage') or {}).items()
               if any(key.startswith(package + '|') for package in allowed)
           }
+          skip_by_package_outcome = {
+              key: value
+              for key, value in (matched.get('skipReasonsByPackageOutcome') or {}).items()
+              if any(key.startswith(package + '|') for package in allowed)
+          }
 
           def outcome(value):
               return 'HIT' if value is True else 'MISS' if value is False else 'UNKNOWN'
@@ -140,6 +145,7 @@ jobs:
               'collectorOrdersByPackageOutcome': dict(sorted(collector.items())),
               'radarMatchedOrdersByPackageOutcome': dict(sorted(matched_counts.items())),
               'radarSkipReasonsByPackage': dict(sorted(skip_by_package.items())),
+              'radarSkipReasonsByPackageOutcome': dict(sorted(skip_by_package_outcome.items())),
               'marketContextOrdersByOutcome': orders,
               'coverageByOutcomeStatus': coverage,
               'byPackageHorizonOutcome': by_outcome,

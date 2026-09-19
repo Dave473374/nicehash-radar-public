@@ -513,7 +513,8 @@ with tempfile.TemporaryDirectory() as directory:
         "explicit zero payedAmount is unknown cost, not nominal-price fallback",
     )
     check(
-        private_result["skipReasons"].get("NO_FRESH_RADAR_MATCH") == 2,
+        private_result["skipReasons"].get("FRESH_RADAR_CURRENCY_MISMATCH") == 1
+        and private_result["skipReasons"].get("NO_FRESH_RADAR_SNAPSHOT") == 1,
         "currency mismatch and stale entry snapshot are not force-matched",
     )
     btc_row = next(
