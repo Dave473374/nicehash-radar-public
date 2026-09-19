@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-19T08:03:56.345229+00:00",
+  "protocolHash": "ba500589e4908319e07d57ca0466498b6318368b7b9dbee86ca77c4e94d79129",
+  "role": "LAG_EPISODE_QUOTE_RESEARCH_ONLY",
+  "currentProductionModelChanged": false,
+  "automaticPurchase": false,
+  "automaticCancel": false,
+  "privateApiUsed": false,
+  "networkRequestsMade": 0,
+  "canRaiseSignal": false,
+  "verdict": "NO_VERIFIED_EDGE",
+  "counts": {
+    "NO_VALID_MARKET_PAIR": 760,
+    "UNVERIFIED_DISPLAY_CONTRACT": 124,
+    "eligiblePoints": 4
+  },
+  "episodeCount": 0,
+  "currentWindowEpisodes": 0,
+  "controlAnchorsInCurrentWindow": 0,
+  "episodeStatusCounts": {},
+  "walkForward": {
+    "status": "NOT_STARTED",
+    "validationStart": "2026-09-20T00:00:00Z",
+    "folds": [],
+    "thresholdsFitted": false,
+    "automaticallyPromotesSignal": false,
+    "verdict": "NO_VERIFIED_EDGE"
+  },
+  "limitations": [
+    "Relative price statistic is not an executable purchase price or verified absolute discount.",
+    "Features are causal; future quote labels are separate and are never HIT/MISS or realized ROI.",
+    "Holdout begins after protocol registration. Daily reference uses only labels known before a 60-minute embargo.",
+    "Controls and episodes may overlap across packages or groups; counts are not independent statistical trials.",
+    "Descriptive folds do not prove incremental edge beyond EV, regimes, fees or actual delivery latency.",
+    "The research schedule is not a live phone notification system. Missing/gapped observations stay censored."
+  ],
+  "inputSha256": {
+    "research/market-edge-pairs.jsonl": "64a8247477400277dc28d5fb9b283e2e90c6065eb828f21a536db75a3db54ebc",
+    "calibration/public-market-history.jsonl": "3e35e1959bdbbbbb3c39cbbab66ee1539fa44f281e034f49afb44393b4b7d82f",
+    "research/lag-protocol-v1.json": "4dbe3baa1437bcbf0feef32ee92307164f8834d2e4e4bdc128ec6ad90188ae8a"
+  },
+  "inputReadWarnings": {}
+}
