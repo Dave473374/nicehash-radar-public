@@ -35,6 +35,34 @@ as the same entry snapshot.
 
 Any market observation that arrived after the order start is excluded.
 
+## Real-order pre-entry windows
+
+The private analysis also builds 15/30/60-minute pre-entry trajectories for
+each completed order when enough exact-package public market history exists.
+
+The endpoint is the latest valid paired quote already observed before the
+order entry and no more than 15 minutes old. Each baseline must be from the
+same exact package/series, must already be observed before entry, and must be
+within 10 minutes of the requested 15/30/60-minute target.
+
+For every matched window the private result records changes in:
+
+- work per native cost and inverse ticket cost per work;
+- public market price statistic;
+- primary-chain difficulty;
+- merge-chain difficulty where present;
+- expected-return percentage points;
+- baseline and endpoint Radar signal.
+
+The ephemeral result then summarizes these features separately for real HIT
+and real MISS orders by exact package and horizon, including a descriptive
+HIT-minus-MISS median difference. This is the first layer in this project that
+can use an actual completed-order MISS denominator for the same feature family.
+
+These comparisons remain descriptive because the entries were user-selected,
+not randomized, and sample sizes can be very small. They never modify the
+locked lag protocol or production signal.
+
 ## Lag protocol integrity
 
 The locked public lag protocol is not modified.
@@ -60,6 +88,10 @@ when the sanitized source contains enough cost/reward data. However, user-chosen
 orders are not randomized trials. Joining them to market context is descriptive
 evidence and does not by itself prove incremental edge or justify changing
 CURRENT.
+
+In particular, a large HIT-versus-MISS difference in merge difficulty or any
+other pre-entry feature is only a candidate pattern until it survives more
+orders and time-separated validation.
 
 This path cannot raise a BUY signal, purchase/cancel an order, alter
 `final_signal`, or change the locked lag thresholds.
