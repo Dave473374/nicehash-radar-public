@@ -27,6 +27,18 @@ WINDOWS_MINUTES = (15, 30, 60)
 SENSITIVITY_TOLERANCE_MINUTES = (10, 15, 20, 25, 30)
 MAX_SCAN_COMMITS_PER_ORDER = 72
 
+ENDPOINT_FEATURES = (
+    "packageWork",
+    "hashrateHps",
+    "primaryDifficulty",
+    "mergeDifficulty",
+    "primaryModelHitProbabilityPercent",
+    "mergeModelHitProbabilityPercent",
+    "expectedReturnPercent",
+    "qualityVs24hPercent",
+    "qualityVs7dPercent",
+)
+
 FEATURES = (
     "packageWorkChangePercent",
     "packageHashrateChangePercent",
@@ -237,6 +249,8 @@ def window_features(endpoint: dict, baseline: dict, horizon: int, target: dateti
         "qualityVs7dChangePercentagePoints": point_delta(endpoint.get("qualityVs7dPercent"), baseline.get("qualityVs7dPercent")),
         "baselineSignal": baseline.get("signal"),
         "endpointSignal": endpoint.get("signal"),
+        "relayVersion": endpoint.get("relayVersion"),
+        "currencySource": endpoint.get("currencySource"),
     }
 
 
@@ -312,6 +326,11 @@ def build_order_context(order: dict, points: list[dict]) -> dict:
         "endpointAgeSeconds": round(endpoint_age, 3),
         "currencySource": endpoint.get("currencySource"),
         "relayVersion": endpoint.get("relayVersion"),
+        "endpointSignal": endpoint.get("signal"),
+        "endpointFeatures": {
+            field: endpoint.get(field)
+            for field in ENDPOINT_FEATURES
+        },
         "windows": windows,
         "baselineToleranceSensitivity": sensitivity,
     }
@@ -323,8 +342,12 @@ def summarize(rows: list[dict]) -> dict:
     endpoint_series = Counter()
     window_status = Counter()
     grouped = defaultdict(list)
+    grouped_by_relay = defaultdict(list)
+    endpoint_grouped_by_relay = defaultdict(list)
+    endpoint_signal_by_relay = Counter()
     sensitivity_status = Counter()
     sensitivity_grouped = defaultdict(list)
+    sensitivity_grouped_by_relay = defaultdict(list)
 
     for row in rows:
         package = str(row.get("packageName") or "UNKNOWN")
@@ -332,13 +355,18 @@ def summarize(rows: list[dict]) -> dict:
         context = row.get("gitFeedPreEntry") if isinstance(row.get("gitFeedPreEntry"), dict) else {}
         orders[(package, result)] += 1
         endpoint_status[(package, result, str(context.get("status") or "UNKNOWN"))] += 1
+        relay = str(context.get("relayVersion") or "UNKNOWN")
+        currency_source = str(context.get("currencySource") or "UNKNOWN")
         if context.get("status") == "FRESH_ENDPOINT":
-            endpoint_series[(
-                package,
-                result,
-                str(context.get("relayVersion") or "UNKNOWN"),
-                str(context.get("currencySource") or "UNKNOWN"),
-            )] += 1
+            endpoint_series[(package, result, relay, currency_source)] += 1
+            endpoint_features = context.get("endpointFeatures")
+            if isinstance(endpoint_features, dict):
+                endpoint_grouped_by_relay[
+                    (package, result, relay, currency_source)
+                ].append(endpoint_features)
+            endpoint_signal_by_relay[
+                (package, result, relay, str(context.get("endpointSignal") or "UNKNOWN"))
+            ] += 1
         for window in context.get("windows") or []:
             if not isinstance(window, dict):
                 continue
@@ -348,6 +376,15 @@ def summarize(rows: list[dict]) -> dict:
                 window_status[(package, horizon, result, status)] += 1
             if status == "MATCHED" and isinstance(horizon, int):
                 grouped[(package, horizon, result)].append(window)
+                grouped_by_relay[
+                    (
+                        package,
+                        horizon,
+                        result,
+                        str(window.get("relayVersion") or relay),
+                        str(window.get("currencySource") or currency_source),
+                    )
+                ].append(window)
 
         sensitivity = context.get("baselineToleranceSensitivity")
         if isinstance(sensitivity, dict):
@@ -368,6 +405,16 @@ def summarize(rows: list[dict]) -> dict:
                     sensitivity_status[(tolerance, package, horizon, result, status)] += 1
                     if status == "MATCHED":
                         sensitivity_grouped[(tolerance, package, horizon, result)].append(window)
+                        sensitivity_grouped_by_relay[
+                            (
+                                tolerance,
+                                package,
+                                horizon,
+                                result,
+                                str(window.get("relayVersion") or relay),
+                                str(window.get("currencySource") or currency_source),
+                            )
+                        ].append(window)
 
     by_group = {}
     package_horizon = defaultdict(dict)
@@ -406,6 +453,78 @@ def summarize(rows: list[dict]) -> dict:
             )
         comparisons[f"{package}|{horizon}m"] = comp
 
+    endpoint_by_relay = {}
+    endpoint_relay_outcomes = defaultdict(dict)
+    for (package, result, relay, currency_source), items in sorted(endpoint_grouped_by_relay.items()):
+        summary = {"orders": len(items)}
+        for field in ENDPOINT_FEATURES:
+            values = [
+                float(item[field])
+                for item in items
+                if number(item.get(field)) is not None
+            ]
+            summary["median" + field[0].upper() + field[1:]] = (
+                round(median(values), 6) if values else None
+            )
+        key = f"{package}|RELAY_{relay}|CURRENCY_{currency_source}|{result}"
+        endpoint_by_relay[key] = summary
+        endpoint_relay_outcomes[(package, relay, currency_source)][result] = summary
+
+    endpoint_hit_minus_miss_by_relay = {}
+    for (package, relay, currency_source), outcomes in sorted(endpoint_relay_outcomes.items()):
+        hit = outcomes.get("HIT")
+        miss = outcomes.get("MISS")
+        if not hit or not miss:
+            continue
+        comp = {"hitOrders": hit["orders"], "missOrders": miss["orders"]}
+        for field in ENDPOINT_FEATURES:
+            metric = "median" + field[0].upper() + field[1:]
+            hv, mv = hit.get(metric), miss.get(metric)
+            comp["hitMinusMiss" + field[0].upper() + field[1:]] = (
+                round(hv - mv, 6)
+                if isinstance(hv, (int, float)) and isinstance(mv, (int, float))
+                else None
+            )
+        endpoint_hit_minus_miss_by_relay[
+            f"{package}|RELAY_{relay}|CURRENCY_{currency_source}"
+        ] = comp
+
+    by_relay = {}
+    relay_package_horizon = defaultdict(dict)
+    for (package, horizon, result, relay, currency_source), items in sorted(grouped_by_relay.items()):
+        summary = {"matchedOrders": len(items)}
+        for field in FEATURES:
+            values = [
+                float(item[field])
+                for item in items
+                if number(item.get(field)) is not None
+            ]
+            summary["median" + field[0].upper() + field[1:]] = (
+                round(median(values), 6) if values else None
+            )
+        key = f"{package}|{horizon}m|RELAY_{relay}|CURRENCY_{currency_source}|{result}"
+        by_relay[key] = summary
+        relay_package_horizon[(package, horizon, relay, currency_source)][result] = summary
+
+    hit_minus_miss_by_relay = {}
+    for (package, horizon, relay, currency_source), outcomes in sorted(relay_package_horizon.items()):
+        hit = outcomes.get("HIT")
+        miss = outcomes.get("MISS")
+        if not hit or not miss:
+            continue
+        comp = {"hitOrders": hit["matchedOrders"], "missOrders": miss["matchedOrders"]}
+        for field in FEATURES:
+            metric = "median" + field[0].upper() + field[1:]
+            hv, mv = hit.get(metric), miss.get(metric)
+            comp["hitMinusMiss" + field[0].upper() + field[1:]] = (
+                round(hv - mv, 6)
+                if isinstance(hv, (int, float)) and isinstance(mv, (int, float))
+                else None
+            )
+        hit_minus_miss_by_relay[
+            f"{package}|{horizon}m|RELAY_{relay}|CURRENCY_{currency_source}"
+        ] = comp
+
     sensitivity_by_group = {}
     sensitivity_package_horizon = defaultdict(dict)
     for (tolerance, package, horizon, result), items in sorted(sensitivity_grouped.items()):
@@ -422,6 +541,63 @@ def summarize(rows: list[dict]) -> dict:
         key = f"{tolerance}m|{package}|{horizon}m|{result}"
         sensitivity_by_group[key] = summary
         sensitivity_package_horizon[(tolerance, package, horizon)][result] = summary
+
+    sensitivity_by_relay = {}
+    sensitivity_relay_outcomes = defaultdict(dict)
+    for (
+        tolerance,
+        package,
+        horizon,
+        result,
+        relay,
+        currency_source,
+    ), items in sorted(sensitivity_grouped_by_relay.items()):
+        summary = {"matchedOrders": len(items)}
+        for field in FEATURES:
+            values = [
+                float(item[field])
+                for item in items
+                if number(item.get(field)) is not None
+            ]
+            summary["median" + field[0].upper() + field[1:]] = (
+                round(median(values), 6) if values else None
+            )
+        key = (
+            f"{tolerance}m|{package}|{horizon}m|"
+            f"RELAY_{relay}|CURRENCY_{currency_source}|{result}"
+        )
+        sensitivity_by_relay[key] = summary
+        sensitivity_relay_outcomes[
+            (tolerance, package, horizon, relay, currency_source)
+        ][result] = summary
+
+    sensitivity_hit_minus_miss_by_relay = {}
+    for (
+        tolerance,
+        package,
+        horizon,
+        relay,
+        currency_source,
+    ), outcomes in sorted(sensitivity_relay_outcomes.items()):
+        hit = outcomes.get("HIT")
+        miss = outcomes.get("MISS")
+        if not hit or not miss:
+            continue
+        comp = {"hitOrders": hit["matchedOrders"], "missOrders": miss["matchedOrders"]}
+        for field in FEATURES:
+            metric = "median" + field[0].upper() + field[1:]
+            hv, mv = hit.get(metric), miss.get(metric)
+            comp["hitMinusMiss" + field[0].upper() + field[1:]] = (
+                round(hv - mv, 6)
+                if isinstance(hv, (int, float)) and isinstance(mv, (int, float))
+                else None
+            )
+        sensitivity_hit_minus_miss_by_relay[
+            (
+                f"{tolerance}m|{package}|{horizon}m|"
+                f"RELAY_{relay}|CURRENCY_{currency_source}"
+            )
+        ] = comp
 
     sensitivity_comparisons = {}
     for (tolerance, package, horizon), outcomes in sorted(sensitivity_package_horizon.items()):
@@ -459,8 +635,16 @@ def summarize(rows: list[dict]) -> dict:
             f"{p}|{h}m|{o}|{s}": n
             for (p, h, o, s), n in sorted(window_status.items())
         },
+        "endpointSignalByRelayPackageOutcome": {
+            f"{p}|{o}|RELAY_{r}|SIGNAL_{s}": n
+            for (p, o, r, s), n in sorted(endpoint_signal_by_relay.items())
+        },
+        "endpointByRelayPackageOutcome": endpoint_by_relay,
+        "endpointHitMinusMissByRelay": endpoint_hit_minus_miss_by_relay,
         "byPackageHorizonOutcome": by_group,
         "hitMinusMiss": comparisons,
+        "byRelayPackageHorizonOutcome": by_relay,
+        "hitMinusMissByRelay": hit_minus_miss_by_relay,
         "baselineToleranceSensitivity": {
             "role": "RETROSPECTIVE_METHOD_SENSITIVITY_ONLY",
             "primaryToleranceMinutes": BASELINE_TOLERANCE_SECONDS // 60,
@@ -471,6 +655,8 @@ def summarize(rows: list[dict]) -> dict:
             },
             "byTolerancePackageHorizonOutcome": sensitivity_by_group,
             "hitMinusMiss": sensitivity_comparisons,
+            "byToleranceRelayPackageHorizonOutcome": sensitivity_by_relay,
+            "hitMinusMissByRelay": sensitivity_hit_minus_miss_by_relay,
             "canRaiseSignal": False,
         },
         "canRaiseSignal": False,
@@ -520,6 +706,7 @@ def analyze(order_doc: dict, commit_rows: list[dict]) -> dict:
             "Only one Palladium S HIT is currently available, so HIT/MISS differences are exploratory.",
             "Git commit availability is required in addition to feed checked_at to prevent future leakage.",
             "Baseline tolerances above 10 minutes are retrospective method-sensitivity checks only and are not primary evidence.",
+            "Same-relay comparisons are reported separately to reduce relay-version confounding.",
             "No feature here can change CURRENT/final_signal without separate time-separated validation.",
         ],
     }
