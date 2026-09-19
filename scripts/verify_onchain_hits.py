@@ -19,7 +19,8 @@ DEFAULT_REPORT = Path("research/onchain-hit-report.json")
 MAX_RESPONSE_BYTES = 4_000_000
 
 MEMPOOL_BASES = {"BTC": "https://mempool.space", "BCH": "https://bchexplorer.cash"}
-ZEC_BASE = "https://api.blockchair.com"
+BLOCKCHAIR_BASE = "https://api.blockchair.com"
+ZEC_BASE = BLOCKCHAIR_BASE
 KAS_BASE = "https://api.kaspa.org"
 SUPPORTED = {"BTC", "BCH", "ZEC", "KAS"}
 KNOWN_TAGS = (
@@ -43,7 +44,7 @@ def finite(value):
 
 
 def get(opener, base, path, json_expected=True):
-    if base not in set(MEMPOOL_BASES.values()) | {ZEC_BASE, KAS_BASE}:
+    if base not in set(MEMPOOL_BASES.values()) | {BLOCKCHAIR_BASE, KAS_BASE}:
         raise ValueError("Explorer host not allowlisted")
     if not path.startswith("/"):
         raise ValueError("Explorer path invalid")
@@ -192,6 +193,78 @@ def first_blockchair_block(payload):
     return block
 
 
+def payout_native_from_public_reward(event):
+    """NiceHash public singleReward stores BTC-like payouts in 1e-8 native units."""
+    raw = event.get("payoutReward")
+    if isinstance(raw, bool):
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(value) or value < 0:
+        return None
+    coin = str(event.get("coin") or "").upper()
+    if coin in {"BTC", "BCH", "ZEC"}:
+        return value / 100_000_000
+    return value
+
+
+def verify_bch_blockchair(event, opener, now, primary_error=None):
+    """Fallback when the BCH mempool-style explorer is unavailable.
+
+    Blockchair confirms height/hash/timestamp/difficulty/reward but this path
+    deliberately does not claim a NiceHash coinbase tag.
+    """
+    result = common(event, now)
+    height = int(event.get("blockHeight"))
+    payload = get(opener, BLOCKCHAIR_BASE, f"/bitcoin-cash/dashboards/block/{height}")
+    block = first_blockchair_block(payload)
+    block_hash = str(block.get("hash") or "").lower().strip()
+    expected = str(event.get("blockHash") or "").lower().strip()
+    if len(expected) == 64 and block_hash and expected != block_hash:
+        return {
+            **result,
+            "status": "CONFLICT_BLOCK_HASH",
+            "explorer": BLOCKCHAIR_BASE,
+            "fallbackFrom": MEMPOOL_BASES["BCH"],
+            "primaryErrorType": primary_error,
+            "onchainBlockHash": block_hash,
+        }
+    on_height = int(block.get("id") or block.get("height") or height)
+    if on_height != height:
+        raise ValueError("BCH fallback block height mismatch")
+
+    reward_raw = block.get("reward")
+    reward_native = None
+    if finite(reward_raw):
+        reward_native = float(reward_raw) / 100_000_000
+
+    payout_native = payout_native_from_public_reward(event)
+    payout_ratio = None
+    if payout_native is not None and reward_native and reward_native > 0:
+        payout_ratio = payout_native / reward_native * 100
+
+    return {
+        **result,
+        "schemaVersion": 3,
+        "status": "VERIFIED_ON_CHAIN_BLOCK_MATCH",
+        "verificationStrength": "BLOCK_HEIGHT_HASH_INDEPENDENT_EXPLORER_FALLBACK",
+        "explorer": BLOCKCHAIR_BASE,
+        "fallbackFrom": MEMPOOL_BASES["BCH"],
+        "primaryErrorType": primary_error,
+        "onchainBlockHash": block_hash or None,
+        "onchainTimestamp": block.get("time") or block.get("date"),
+        "onchainDifficulty": block.get("difficulty"),
+        "coinbaseRewardRaw": reward_raw,
+        "coinbaseRewardNative": round(reward_native, 12) if reward_native is not None else None,
+        "niceHashPayoutRewardNative": round(payout_native, 12) if payout_native is not None else None,
+        "payoutToCoinbasePercent": round(payout_ratio, 6) if payout_ratio is not None else None,
+        "explorerMinerLabel": block.get("guessed_miner"),
+        "coinbaseTagClass": "NOT_CHECKED_BCH_BLOCKCHAIR_FALLBACK",
+    }
+
+
 def verify_zec(event, opener, now):
     result = common(event, now)
     height = int(event.get("blockHeight"))
@@ -260,7 +333,20 @@ def verify_event(event, opener=None, now=None):
         return {**result, "status": "UNSUPPORTED_COIN", "explorer": None}
     opener = opener or urllib.request.build_opener(NoRedirect())
     try:
-        if coin in MEMPOOL_BASES:
+        if coin == "BCH":
+            try:
+                primary = verify_mempool(event, opener, now)
+            except Exception as primary_exc:
+                return verify_bch_blockchair(
+                    event,
+                    opener,
+                    now,
+                    primary_error=type(primary_exc).__name__,
+                )
+            # A real primary hash conflict is evidence, not an availability
+            # failure, so never hide it behind a fallback.
+            return primary
+        if coin == "BTC":
             return verify_mempool(event, opener, now)
         if coin == "ZEC":
             return verify_zec(event, opener, now)
