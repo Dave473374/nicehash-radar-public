@@ -115,6 +115,51 @@ class PrivateOrderMatchDiagnosticsTests(unittest.TestCase):
                 1,
             )
 
+    def test_currency_mismatch_records_only_aggregate_currency_pair(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            orders = root / "orders.json"
+            radar = root / "radar.jsonl"
+            output = root / "matches.json"
+            orders.write_text(json.dumps({"list": [{
+                "startTs": "2026-09-19T12:00:00+00:00",
+                "endTs": "2026-09-19T13:00:00+00:00",
+                "packageName": "Palladium S",
+                "currencyMarket": "BTC",
+                "soloMiningCoin": "LTC",
+                "soloMiningMergeCoin": "DOGE",
+                "isReward": False,
+                "packagePrice": 0.0001,
+            }]}), encoding="utf-8")
+            snapshot = {
+                "collected_at": "2026-09-19T11:55:00+00:00",
+                "feed": {
+                    "checked_at": "2026-09-19T11:55:00+00:00",
+                    "packages": [{
+                        "name": "Palladium S",
+                        "currency_market": "USDT",
+                        "primary_chain": {"currency": "LTC"},
+                    }],
+                },
+            }
+            radar.write_text(json.dumps(snapshot) + "\n", encoding="utf-8")
+            env = os.environ.copy()
+            env.update({
+                "PRIVATE_ORDERS_PATH": str(orders),
+                "RADAR_HISTORY_PATH": str(radar),
+                "PRIVATE_MATCH_OUTPUT": str(output),
+            })
+            subprocess.run([sys.executable, str(ROOT / "scripts" / "match_private_orders.py")],
+                           check=True, capture_output=True, text=True, env=env)
+            result = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                result["currencyMismatchByPackageOutcome"][
+                    "Palladium S|MISS|ORDER_BTC|RADAR_USDT"
+                ],
+                1,
+            )
+            self.assertNotIn("startTs", json.dumps(result["currencyMismatchByPackageOutcome"]))
+
     def test_fresh_snapshot_without_exact_package_is_distinguished(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
