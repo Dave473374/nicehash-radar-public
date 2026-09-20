@@ -20,9 +20,12 @@ on:
       - "scripts/evaluate_prospective_candidate_v1.py"
       - "research/palladium-s-momentum-candidate-v1.json"
       - "tests/test_prospective_candidate_v1.py"
+      - "tests/test_workflow_publish_safety.py"
       - "scripts/test_phase0_correctness.py"
       - ".github/workflows/phase0-correctness-regression.yml"
       - ".github/workflows/update-buy-feed.yml"
+      - ".github/workflows/recent-blocks.yml"
+      - ".github/workflows/match-mining-events.yml"
       - ".github/workflows/phase3-buy-radar-alerts.yml"
       - ".github/workflows/validate-buy-radar-evidence.yml"
       - ".github/workflows/test-nicehash-private.yml"
@@ -56,6 +59,9 @@ jobs:
 
       - name: Smoke-test calibration report build
         run: python3 scripts/build_calibration_report.py > /tmp/calibration-report-smoke.log
+
+      - name: Test workflow publishing against isolated local Git remotes
+        run: python3 -m unittest discover -s tests -p 'test_workflow_publish_safety.py' -v
 
       - name: Test frozen prospective candidate v1
         run: python3 -m unittest tests.test_prospective_candidate_v1 -v

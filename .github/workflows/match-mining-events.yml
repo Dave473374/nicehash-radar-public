@@ -1,38 +1,50 @@
 {
-"name": "Match Mining Events",
-"on": {
-"workflow_dispatch": {},
-"schedule": [
-{
-"cron": "7,22,37,52 * * * *"
-}
-]
-},
-"permissions": {
-"contents": "write"
-},
-"jobs": {
-"match": {
-"runs-on": "ubuntu-latest",
-"steps": [
-{
-"uses": "actions/checkout@v4"
-},
-{
-"uses": "actions/setup-python@v5",
-"with": {
-"python-version": "3.12"
-}
-},
-{
-"name": "Match mining events to radar",
-"run": "python scripts/match_mining_events.py"
-},
-{
-"name": "Commit mining event matches",
-"run": "git config user.name \"github-actions[bot]\" && git config user.email \"41898282+github-actions[bot]@users.noreply.github.com\" && git add calibration/mining-event-matches.jsonl && git diff --cached --quiet || (git commit -m \"Update Mining Event Matches\" && git push)"
-}
-]
-}
-}
+  "name": "Match Mining Events",
+  "on": {
+    "workflow_dispatch": {},
+    "schedule": [
+      {
+        "cron": "7,22,37,52 * * * *"
+      }
+    ]
+  },
+  "permissions": {
+    "contents": "write"
+  },
+  "concurrency": {
+    "group": "mining-event-matches-writer",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "match": {
+      "if": "github.ref == 'refs/heads/main'",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "name": "Checkout repository",
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "main",
+            "fetch-depth": 1
+          }
+        },
+        {
+          "name": "Set up Python",
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Match mining events to radar",
+          "run": "python scripts/match_mining_events.py"
+        },
+        {
+          "name": "Commit mining event matches",
+          "shell": "bash",
+          "run": "set -euo pipefail\ngit config user.name \"github-actions[bot]\"\ngit config user.email \"41898282+github-actions[bot]@users.noreply.github.com\"\ngit add -- calibration/mining-event-matches.jsonl\n\nif git diff --cached --quiet; then\n  echo \"No mining-event match changes to commit\"\n  exit 0\nfi\n\ngit commit -m \"Update Mining Event Matches\"\n\nfor attempt in 1 2 3; do\n  if git push origin HEAD:main; then\n    exit 0\n  fi\n\n  if [ \"$attempt\" -eq 3 ]; then\n    break\n  fi\n\n  echo \"Push attempt ${attempt} failed; fetching latest main before retry\"\n  git fetch origin main\n\n  # Never auto-merge a generated file updated by another writer.\n  if ! git diff --quiet HEAD...origin/main -- calibration/mining-event-matches.jsonl; then\n    echo \"::error::Output changed on main; refusing to overwrite or merge generated data\"\n    exit 1\n  fi\n\n  if ! git -c rebase.autoStash=false -c rerere.enabled=false rebase origin/main; then\n    echo \"::error::Rebase conflict; refusing to overwrite remote changes\"\n    git rebase --abort || true\n    exit 1\n  fi\n\n  sleep $((attempt * 2))\ndone\n\necho \"::error::Push failed after 3 attempts; generated output was not published\"\nexit 1\n"
+        }
+      ]
+    }
+  }
 }
