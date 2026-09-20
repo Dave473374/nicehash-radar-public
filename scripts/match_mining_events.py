@@ -1,6 +1,8 @@
 import json
+import math
+from bisect import bisect_left, bisect_right
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 SNAPSHOTS_FILE = os.getenv(
     "RADAR_SNAPSHOTS_FILE",
@@ -27,19 +29,21 @@ def parse_time(value):
         ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return None
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
+    if ts.tzinfo is None or ts.utcoffset() is None:
+        return None
     return ts.astimezone(timezone.utc)
 
 
 def event_time(event):
     value = event.get("time")
-    if not value:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return datetime.fromtimestamp(
-        value / 1000,
-        tz=timezone.utc,
-    )
+    try:
+        if not math.isfinite(value) or value <= 0:
+            return None
+        return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+    except (ValueError, OverflowError, OSError):
+        return None
 
 
 snapshots = [
@@ -59,35 +63,90 @@ for snapshot in snapshots:
 snapshot_times.sort(key=lambda item: item[0])
 
 
+snapshot_index = [ts for ts, _ in snapshot_times]
+
+
+def feed_time(snapshot):
+    feed = snapshot.get("feed") or {}
+    # A recently captured old quote is not a fresh quote. Never substitute
+    # collected_at for an absent/invalid source timestamp.
+    value = feed.get("checked_at")
+    if value in (None, ""):
+        value = snapshot.get("feed_generated_at")
+    source = parse_time(value)
+    saved = snapshot.get("feed_generated_at")
+    if saved not in (None, "") and parse_time(saved) != source:
+        return None
+    return source
+
+
 def reward_context_snapshot(at):
     if at is None:
         return None
-
-    candidates = [
-        (ts, snapshot)
-        for ts, snapshot in snapshot_times
-        if ts <= at
-        and (at - ts).total_seconds()
-        <= MAX_REWARD_CONTEXT_AGE_SECONDS
-    ]
-
+    lo = bisect_left(snapshot_index, at - timedelta(seconds=MAX_REWARD_CONTEXT_AGE_SECONDS))
+    hi = bisect_right(snapshot_index, at)
+    candidates = []
+    for ts, snapshot in snapshot_times[lo:hi]:
+        source = feed_time(snapshot)
+        feed = snapshot.get("feed") or {}
+        if (source is not None and source <= ts
+                and 0 <= (at - source).total_seconds() <= MAX_REWARD_CONTEXT_AGE_SECONDS
+                and feed.get("status") == "BUY FEED OK" and feed.get("ok") is True):
+            candidates.append((ts, snapshot))
     if not candidates:
         return None
+    latest_ts, latest = candidates[-1]
+    # Conflicting rows at the same receipt time cannot be silently tie-broken.
+    if any(ts == latest_ts and row.get("feed") != latest.get("feed") for ts, row in candidates):
+        return None
+    return latest
 
-    return max(candidates, key=lambda item: item[0])[1]
+
+def legacy_btc_feed(feed):
+    packages = feed.get("packages")
+    if feed.get("relay_version") != "2.8.2" or not isinstance(packages, list) or not packages:
+        return False
+    for package in packages:
+        if not isinstance(package, dict) or package.get("currency_market") not in (None, ""):
+            return False
+        try:
+            price = float(package.get("price_btc"))
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if (isinstance(package.get("price_btc"), bool) or not math.isfinite(price)
+                or price <= 0 or str(package.get("size") or "") not in {"S", "M"}):
+            return False
+    return True
 
 
-def package_for(snapshot, name):
+def package_for(snapshot, name, event):
     if snapshot is None:
         return None
-    return next(
-        (
-            package
-            for package in snapshot.get("feed", {}).get("packages", [])
-            if package.get("name") == name
-        ),
-        None,
-    )
+    feed = snapshot.get("feed") or {}
+    coins = event.get("coins")
+    if not isinstance(coins, list) or not coins or any(not isinstance(c, str) or not c for c in coins):
+        return None
+    coins = set(coins)
+    event_currency = event.get("currencyMarket") or event.get("currency_market")
+    matched = []
+    for package in feed.get("packages") or []:
+        if not isinstance(package, dict) or package.get("name") != name:
+            continue
+        primary = (package.get("primary_chain") or {}).get("currency")
+        merge = (package.get("merge_chain") or {}).get("currency")
+        if not coins <= {primary, merge}:
+            continue
+        currency = package.get("currency_market")
+        if currency in (None, "") and legacy_btc_feed(feed):
+            currency = "BTC"
+        if currency not in {"BTC", "USDT"}:
+            continue
+        if event_currency is not None and event_currency != currency:
+            continue
+        matched.append(package)
+    # The public reward archive usually has no payment currency. Only an
+    # unambiguous package may supply context; this is not proof of paid currency.
+    return matched[0] if len(matched) == 1 else None
 
 
 records = []
@@ -98,7 +157,8 @@ for event in events:
         continue
 
     snapshot = reward_context_snapshot(at)
-    package = package_for(snapshot, event.get("packageName"))
+    package = package_for(snapshot, event.get("packageName"), event)
+    source_ts = feed_time(snapshot) if snapshot is not None else None
 
     snapshot_ts = (
         parse_time(snapshot.get("collected_at"))
@@ -132,6 +192,14 @@ for event in events:
             if snapshot_ts is not None
             else None
         ),
+        "snapshot_feed_time": source_ts.isoformat() if source_ts is not None else None,
+        "snapshot_feed_age_seconds": (
+            round((at - source_ts).total_seconds(), 1) if source_ts is not None else None
+        ),
+        "currency_match_basis": (
+            "EXPLICIT_EVENT_CURRENCY" if event.get("currencyMarket") or event.get("currency_market")
+            else "UNAMBIGUOUS_PACKAGE_CONTEXT_NOT_PAYMENT_PROOF"
+        ) if package is not None else None,
         "price_btc": (
             package.get("price_btc")
             if package is not None
@@ -269,12 +337,14 @@ for event in events:
 
     records.append(record)
 
-open(OUTPUT_FILE, "w", encoding="utf-8").write(
-    "".join(
-        json.dumps(record, separators=(",", ":")) + "\n"
-        for record in records
-    )
+# Serialize completely before opening the destination: invalid numbers must
+# not truncate the last valid output.
+payload = "".join(
+    json.dumps(record, separators=(",", ":"), allow_nan=False) + "\n"
+    for record in records
 )
+with open(OUTPUT_FILE, "w", encoding="utf-8") as handle:
+    handle.write(payload)
 
 print("REWARD-TIME CONTEXT MATCHING")
 print("Radar snapshots:", len(snapshots))

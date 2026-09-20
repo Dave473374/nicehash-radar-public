@@ -12,6 +12,8 @@ on:
       - "scripts/build_alert_events.py"
       - "scripts/match_private_orders.py"
       - "scripts/match_mining_events.py"
+      - "scripts/collect_calibration.py"
+      - "tests/test_reward_context_integrity.py"
       - "scripts/apply_math_consistency_shadow.py"
       - "scripts/nicehash_private_readonly.py"
       - "scripts/collect_shared_packages.py"
@@ -62,6 +64,23 @@ jobs:
 
       - name: Test workflow publishing against isolated local Git remotes
         run: python3 -m unittest discover -s tests -p 'test_workflow_publish_safety.py' -v
+
+      - name: Test source freshness and reward-context integrity
+        run: python3 -m unittest discover -s tests -p 'test_reward_context_integrity.py' -v
+
+      - name: Smoke-test reward matching on existing public history
+        run: |
+          MINING_EVENT_MATCH_OUTPUT=/tmp/reward-context-smoke.jsonl python3 scripts/match_mining_events.py
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          rows = [json.loads(line) for line in Path('/tmp/reward-context-smoke.jsonl').read_text().splitlines() if line.strip()]
+          matched = [r for r in rows if r.get('radar_matched') is True]
+          assert rows and matched, 'Public-history smoke must contain real matches'
+          assert all(r.get('entry_time_eligible') is False and r.get('can_supply_miss_denominator') is False for r in rows)
+          assert all(0 <= r['snapshot_feed_age_seconds'] <= 900 for r in matched)
+          print('Public-history rows:', len(rows), 'fresh reward-context matches:', len(matched))
+          PYCODE
 
       - name: Test frozen prospective candidate v1
         run: python3 -m unittest tests.test_prospective_candidate_v1 -v
