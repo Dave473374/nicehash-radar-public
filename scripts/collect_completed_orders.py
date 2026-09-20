@@ -39,11 +39,14 @@ def sanitize_order(row):
     if not isinstance(row, dict):
         return None
 
-    rewards = [
-        clean
-        for reward in (row.get("soloReward") or [])
-        if (clean := sanitize_reward(reward)) is not None
-    ]
+    raw_rewards = row.get("soloReward")
+    # Keep an unknown placeholder rather than erase a missing payout leg.
+    # Otherwise the downstream matcher could mistake a partial sum for total ROI.
+    rewards = (
+        [sanitize_reward(reward) for reward in raw_rewards]
+        if isinstance(raw_rewards, list)
+        else [] if raw_rewards is None else [None]
+    )
 
     out = {
         "startTs": first_value(row, "startTs", "orderStartTs"),

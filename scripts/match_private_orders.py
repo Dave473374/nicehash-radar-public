@@ -1,4 +1,5 @@
 import json
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,32 +36,32 @@ def parse_ts(value):
         ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return None
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
+    if ts.tzinfo is None or ts.utcoffset() is None:
+        return None
     return ts.astimezone(timezone.utc)
 
 
 def to_float(value):
     try:
-        if value in (None, ""):
+        if isinstance(value, bool) or value in (None, ""):
             return None
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
 def snapshot_feed_time(snapshot):
     feed = snapshot.get("feed") or {}
-    for value in (
-        snapshot.get("feed_generated_at"),
-        feed.get("checked_at"),
-        feed.get("generated_at"),
-        snapshot.get("collected_at"),
-    ):
-        ts = parse_ts(value)
-        if ts is not None:
-            return ts
-    return None
+    value = feed.get("checked_at")
+    if value in (None, ""):
+        value = snapshot.get("feed_generated_at") or feed.get("generated_at")
+    source = parse_ts(value)
+    saved = snapshot.get("feed_generated_at")
+    if saved not in (None, "") and parse_ts(saved) != source:
+        return None
+    # Receipt is not a substitute for missing source time.
+    return source
 
 
 def legacy_282_btc_only_feed(snapshot):
@@ -100,24 +101,31 @@ def order_outcome(order):
 
 
 def realized_return_btc(order, outcome):
-    rewards = order.get("soloReward") or []
+    rewards = order.get("soloReward")
+    if rewards is None:
+        rewards = []
+    if not isinstance(rewards, list):
+        return None, False
     values = []
-
     for reward in rewards:
         if not isinstance(reward, dict):
-            continue
+            return None, False
         value = to_float(reward.get("payoutRewardBtc"))
-        if value is not None:
-            values.append(value)
-
-    if values:
-        return sum(values), True
-
-    # A completed explicit MISS establishes a zero payout.
+        if value is None or value < 0:
+            return None, False
+        values.append(value)
+    try:
+        total = math.fsum(values)
+    except (ValueError, OverflowError):
+        return None, False
+    if not math.isfinite(total):
+        return None, False
+    # An explicit MISS has zero payout, unless the response contradicts itself.
     if outcome == "MISS":
-        return 0.0, True
-
-    # For HIT/UNKNOWN, missing payout fields must not be coerced to zero.
+        return (0.0, True) if total == 0 else (None, False)
+    # HIT with empty, incomplete or zero-only payout details is not complete ROI.
+    if values and total > 0:
+        return total, True
     return None, False
 
 
@@ -157,7 +165,10 @@ def cost_btc_equivalent(order, package):
             or btc_quote <= 0
         ):
             return native_cost, None, source + "_NO_CONVERSION"
-        return native_cost, native_cost * btc_quote / native_quote, source
+        converted = native_cost * btc_quote / native_quote
+        if not math.isfinite(converted) or converted <= 0:
+            return native_cost, None, source + "_INVALID_CONVERSION"
+        return native_cost, converted, source
 
     return native_cost, None, source + "_UNSUPPORTED_CURRENCY"
 
@@ -197,6 +208,8 @@ def find_match(order):
         (ts, snapshot)
         for ts, snapshot in snapshot_points
         if ts <= order_start
+        and (receipt := parse_ts(snapshot.get("collected_at"))) is not None
+        and ts <= receipt <= order_start
     ]
     if not past:
         if snapshot_points and snapshot_points[0][0] > order_start:
@@ -252,6 +265,7 @@ def find_match(order):
                 and cost_btc > 0
                 and return_available
                 and return_btc is not None
+                and math.isfinite((return_btc / cost_btc - 1) * 100)
             )
 
             return {
@@ -452,6 +466,9 @@ result = {
         "entryTimeOnly": True,
         "unknownOutcomeExcludedFromHitRate": True,
         "missingHitPayoutIsNotZero": True,
+        "partialPayoutExcludedFromRoi": True,
+        "nonfiniteAmountsRejected": True,
+        "sourceAndReceiptMustPrecedeEntry": True,
         "currencyMarketMustMatch": True,
         "legacy282BtcOnlySchemaBridge": True,
         "usdtCostConvertedUsingEntrySnapshot": True,
@@ -460,7 +477,7 @@ result = {
 }
 
 OUTPUT.write_text(
-    json.dumps(result, separators=(",", ":"), ensure_ascii=False),
+    json.dumps(result, separators=(",", ":"), ensure_ascii=False, allow_nan=False),
     encoding="utf-8",
 )
 
