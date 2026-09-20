@@ -10,9 +10,13 @@ on:
       - scripts/collect_realized_blocks.py
       - scripts/backfill_public_easymining_hits.py
       - scripts/verify_onchain_hits.py
+      - scripts/collect_soloblocks_btc_hits.py
+      - scripts/compare_soloblocks_nicehash.py
       - tests/test_public_hit_backfill.py
       - tests/test_onchain_hit_verification.py
+      - tests/test_soloblocks_btc_research.py
       - docs/onchain-hit-verification.md
+      - docs/soloblocks-btc-research.md
       - .github/workflows/onchain-hit-research.yml
 
 concurrency:
@@ -39,7 +43,7 @@ jobs:
           python3 scripts/check_private_api_policy.py
       - name: Unit tests without network
         run: |
-          python3 -m unittest tests.test_public_hit_backfill tests.test_onchain_hit_verification -v
+          python3 -m unittest tests.test_public_hit_backfill tests.test_onchain_hit_verification tests.test_soloblocks_btc_research -v
       - name: Small public-network smoke
         run: |
           python3 scripts/collect_realized_blocks.py --pages 2 --output /tmp/realized-blocks.jsonl
@@ -51,13 +55,27 @@ jobs:
             --ledger /tmp/onchain-hit-verification.jsonl \
             --report /tmp/onchain-hit-report.json \
             --max-new 8
+          python3 scripts/collect_soloblocks_btc_hits.py \
+            --max-pages 1 \
+            --output /tmp/soloblocks-btc-hits.jsonl
+          python3 scripts/verify_onchain_hits.py \
+            --input /tmp/soloblocks-btc-hits.jsonl \
+            --ledger /tmp/soloblocks-btc-onchain-verification.jsonl \
+            --report /tmp/soloblocks-btc-onchain-report.json \
+            --max-new 2
+          python3 scripts/compare_soloblocks_nicehash.py \
+            --solo-input /tmp/soloblocks-btc-hits.jsonl \
+            --nicehash-input recent-blocks.json \
+            --ledger /tmp/soloblocks-btc-onchain-verification.jsonl \
+            --output /tmp/soloblocks-btc-abc-report.json
           cat /tmp/onchain-hit-report.json
+          cat /tmp/soloblocks-btc-abc-report.json
 
   publish:
     needs: verify
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: write
     concurrency:
@@ -82,11 +100,27 @@ jobs:
             --input /tmp/deep-realized-blocks.jsonl \
             --output research/public-easymining-hit-history.jsonl
           python3 scripts/verify_onchain_hits.py --max-new 24
+      - name: SoloBlocks BTC research snapshot and verification
+        run: |
+          python3 scripts/collect_soloblocks_btc_hits.py --max-pages 30
+          python3 scripts/verify_onchain_hits.py \
+            --input research/soloblocks-btc-hits.jsonl \
+            --ledger research/soloblocks-btc-onchain-verification.jsonl \
+            --report research/soloblocks-btc-onchain-report.json \
+            --max-new 24
+          python3 scripts/compare_soloblocks_nicehash.py
       - name: Persist research-only outputs
         run: |
           git config user.name 'NiceHash Radar Bot'
           git config user.email 'actions@github.com'
-          git add research/public-easymining-hit-history.jsonl research/onchain-hit-verification.jsonl research/onchain-hit-report.json
+          git add \
+            research/public-easymining-hit-history.jsonl \
+            research/onchain-hit-verification.jsonl \
+            research/onchain-hit-report.json \
+            research/soloblocks-btc-hits.jsonl \
+            research/soloblocks-btc-onchain-verification.jsonl \
+            research/soloblocks-btc-onchain-report.json \
+            research/soloblocks-btc-abc-report.json
           git diff --cached --quiet && exit 0
           git commit -m 'Update public on-chain HIT research (no decision changes)'
           for attempt in 1 2 3; do
