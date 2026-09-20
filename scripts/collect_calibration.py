@@ -85,14 +85,14 @@ def existing_feed_hashes():
 
 feed = json.loads(SOURCE_FILE.read_text(encoding="utf-8"))
 collected_at = datetime.now(timezone.utc)
-validate_feed(feed, collected_at)
-
 feed_hash = canonical_feed_sha256(feed)
 
 if feed_hash in existing_feed_hashes():
     print("Calibration snapshot already present for current feed")
     print("Relay version:", feed.get("relay_version"))
     raise SystemExit(0)
+
+validate_feed(feed, collected_at)
 
 snapshot = {
     "collected_at": collected_at.isoformat(),

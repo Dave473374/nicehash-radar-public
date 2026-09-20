@@ -11,6 +11,8 @@ on:
     paths:
       - "scripts/build_alert_events.py"
       - "scripts/match_private_orders.py"
+      - "scripts/collect_completed_orders.py"
+      - "tests/test_private_payout_integrity.py"
       - "scripts/match_mining_events.py"
       - "scripts/collect_calibration.py"
       - "tests/test_reward_context_integrity.py"
@@ -81,6 +83,9 @@ jobs:
           assert all(0 <= r['snapshot_feed_age_seconds'] <= 900 for r in matched)
           print('Public-history rows:', len(rows), 'fresh reward-context matches:', len(matched))
           PYCODE
+
+      - name: Test private payout completeness without credentials
+        run: python3 -m unittest discover -s tests -p 'test_private_payout_integrity.py' -v
 
       - name: Test frozen prospective candidate v1
         run: python3 -m unittest tests.test_prospective_candidate_v1 -v

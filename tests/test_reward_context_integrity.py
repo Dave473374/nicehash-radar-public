@@ -102,6 +102,22 @@ class CollectorFreshnessTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), before)
 
 
+    def test_already_backfilled_stale_feed_is_noop_not_new_live_capture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); (root / "calibration").mkdir()
+            f = feed()
+            h = collector_functions()["canonical_feed_sha256"](f)
+            history = root / "calibration/radar-snapshots.jsonl"
+            before = json.dumps({"collected_at": iso(-1), "feed_sha256": h, "feed": f}) + "\n"
+            history.write_text(before)
+            (root / "buy-feed.json").write_text(json.dumps(f))
+            result = subprocess.run([sys.executable, str(ROOT / "scripts/collect_calibration.py")],
+                                    cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("already present", result.stdout)
+            self.assertEqual(history.read_text(), before)
+
+
 class RewardContextTests(unittest.TestCase):
     def run_match(self, snaps, ev=None, success=True):
         ev = event() if ev is None else ev
