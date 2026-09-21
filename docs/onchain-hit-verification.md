@@ -16,6 +16,35 @@ against Litecoin and a public DOGE success event is verified against Dogecoin.
 A match on one chain is explicitly **not** treated as proof that the paired chain
 also produced a reward.
 
+## EasyMining attribution is separate from NiceHash pool attribution
+
+A Bitcoin or Bitcoin Cash coinbase tag such as `/NiceHash/`, `/NiceHashMining/`
+or `/NiceHashSolo/` proves only NiceHash pool/miner evidence. It does **not**
+by itself prove that the block came from EasyMining.
+
+The verifier records an explicit product-level classification:
+
+- `EASYMINING_CONFIRMED`: the block identity comes from the public NiceHash
+  EasyMining `singleReward` source and includes package identity.
+- `NON_EASY_CONFIRMED`: an explicit source classifies the reward as a
+  non-EasyMining order. A NiceHash coinbase tag does not override this.
+- `NICEHASH_UNKNOWN`: NiceHash pool/miner evidence exists on-chain, but no
+  product-level EasyMining/non-Easy source is available.
+- `UNKNOWN`: neither product attribution nor NiceHash pool attribution is
+  established.
+- `CONFLICTING_EVIDENCE`: explicit EasyMining and explicit non-Easy source
+  evidence conflict; the verifier fails closed instead of choosing one.
+
+Concrete regression examples from 21 Sep 2026 keep this separation locked:
+BTC block 967915 is classified EasyMining only because it is present in the
+public EasyMining success source with Gold L package identity; BTC block 967930
+is a non-Easy example when supplied with explicit `NON_EASY_ORDER` evidence.
+Both may carry ordinary NiceHash pool evidence, which is a separate fact.
+
+Known payout addresses are not hard-coded as the sole classifier. They may be
+useful supporting research evidence, but addresses can rotate or be reused.
+Product attribution requires an explicit source classification.
+
 ## Evidence layers
 
 1. The existing allowlisted public NiceHash collector
@@ -60,6 +89,14 @@ conflict is returned directly and is never hidden by fallback.
 Previously stored Palladium events with status `UNSUPPORTED_COIN` are eligible
 for one-time re-verification now that LTC/DOGE are supported. Existing verified
 records are not reprocessed unnecessarily.
+
+
+For UTXO-chain public `singleReward` rows, raw `payoutReward` values are
+normalized from 1e-8 native units before computing
+`payoutToCoinbasePercent`. This prevents a satoshi/native-unit mismatch from
+turning an approximately 97% payout into a multi-billion-percent value. Existing
+ledger rows are migrated locally when their source event is available; no
+network re-verification is required for this schema repair.
 
 ## Critical limitation
 

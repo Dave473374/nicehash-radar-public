@@ -59,6 +59,22 @@ def mempool_fixture(coin="BCH", tag=b"/NiceHash/", height=969090):
     return h,op
 
 
+def mempool_fixture_exact(height, block_hash, reward_sats, tag=b"/NiceHash/"):
+    base=m.MEMPOOL_BASES["BTC"]
+    scriptsig=(b"abc"+tag+b"xyz").hex()
+    return FakeOpener({
+        base+f"/api/block-height/{height}": block_hash,
+        base+f"/api/block/{block_hash}": {
+            "id":block_hash,"height":height,"timestamp":1_700_000_000,
+            "difficulty":132757073449487.52,
+        },
+        base+f"/api/block/{block_hash}/txs/0": [{
+            "vin":[{"is_coinbase":True,"scriptsig":scriptsig}],
+            "vout":[{"value":reward_sats}],
+        }],
+    })
+
+
 class OnchainTests(unittest.TestCase):
     def test_nicehash_tag(self):
         h,op=mempool_fixture()
@@ -70,6 +86,89 @@ class OnchainTests(unittest.TestCase):
         h,op=mempool_fixture(tag=b"/NiceHashMining/")
         r=m.verify_event(ev(block_hash=h), opener=op)
         self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_OTHER_NICEHASH_TAG")
+
+    def test_gold_967915_is_easymining_only_with_product_source_evidence(self):
+        height=967915
+        h="00000000000000000000638e9c176baf3671caddb143023e0ca1519d69e8e6a8"
+        event=ev("BTC",height,h,"Gold L")
+        event["source"]="NICEHASH_PUBLIC_SINGLE_REWARD"
+        event["packageId"]="cf69f836-5908-47ce-931a-9b6f6c4e2571"
+        event["payoutReward"]=306817328
+        op=mempool_fixture_exact(height,h,316306523)
+        r=m.verify_event(event,opener=op,now="2026-09-21T01:00:00+00:00")
+        self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_NICEHASH_TAG")
+        self.assertEqual(r["easyMiningAttribution"],"EASYMINING_CONFIRMED")
+        self.assertEqual(r["niceHashPoolAttribution"],"CONFIRMED")
+        self.assertTrue(r["niceHashTagDoesNotProveEasyMining"])
+        self.assertAlmostEqual(r["niceHashPayoutRewardNative"],3.06817328,places=8)
+        self.assertAlmostEqual(r["payoutToCoinbasePercent"],97.0,places=5)
+
+    def test_gold_967930_explicit_non_easy_is_not_relabelled_by_nicehash_tag(self):
+        height=967930
+        h="0000000000000000000062b25ebb689e0866e3f4830373311291267ede20972f"
+        event=ev("BTC",height,h,None)
+        event["packageName"]=None
+        event["packageId"]=None
+        event["sourceClassification"]="NON_EASY_ORDER"
+        event["source"]="USER_PROVIDED_NICEHASH_LOTTERY_EVIDENCE"
+        event["payoutReward"]=314097645
+        op=mempool_fixture_exact(height,h,323811995)
+        r=m.verify_event(event,opener=op,now="2026-09-21T04:00:00+00:00")
+        self.assertEqual(r["status"],"VERIFIED_ON_CHAIN_NICEHASH_TAG")
+        self.assertEqual(r["easyMiningAttribution"],"NON_EASY_CONFIRMED")
+        self.assertEqual(r["easyMiningAttributionBasis"],"EXPLICIT_NON_EASY_ORDER_SOURCE")
+        self.assertEqual(r["niceHashPoolAttribution"],"CONFIRMED")
+
+    def test_nicehash_tag_without_product_source_stays_nicehash_unknown(self):
+        height=967931
+        h=f"{height:064x}"
+        event=ev("BTC",height,h,"Gold L")
+        op=mempool_fixture_exact(height,h,320000000)
+        r=m.verify_event(event,opener=op)
+        self.assertEqual(r["easyMiningAttribution"],"NICEHASH_UNKNOWN")
+        self.assertNotEqual(r["easyMiningAttribution"],"EASYMINING_CONFIRMED")
+
+    def test_conflicting_easy_and_non_easy_source_evidence_fails_closed(self):
+        event=ev("BTC",967915,
+            "00000000000000000000638e9c176baf3671caddb143023e0ca1519d69e8e6a8",
+            "Gold L")
+        event["source"]="NICEHASH_PUBLIC_SINGLE_REWARD"
+        event["sourceClassification"]="NON_EASY_ORDER"
+        result=m.apply_easymining_attribution(
+            {"status":"VERIFIED_ON_CHAIN_NICEHASH_TAG","coinbaseTagClass":"NICEHASH_TAG"},
+            event,
+        )
+        self.assertEqual(result["easyMiningAttribution"],"CONFLICTING_EVIDENCE")
+
+    def test_existing_ledger_migrates_attribution_and_repairs_legacy_ratio_offline(self):
+        height=967915
+        h="00000000000000000000638e9c176baf3671caddb143023e0ca1519d69e8e6a8"
+        event=ev("BTC",height,h,"Gold L")
+        event["source"]="NICEHASH_PUBLIC_SINGLE_REWARD"
+        event["packageId"]="cf69f836-5908-47ce-931a-9b6f6c4e2571"
+        event["payoutReward"]=306817328
+        old={
+            "schemaVersion":2,"eventId":event["eventId"],"coin":"BTC",
+            "blockHeight":height,"packageName":"Gold L","packageId":event["packageId"],
+            "niceHashBlockHash":h,"niceHashPayoutReward":306817328,
+            "status":"VERIFIED_ON_CHAIN_NICEHASH_TAG",
+            "coinbaseTagClass":"NICEHASH_TAG","coinbaseRewardNative":3.16306523,
+            "payoutToCoinbasePercent":9700000021.814283,
+        }
+        with tempfile.TemporaryDirectory() as d:
+            inp=Path(d)/"in.jsonl"; led=Path(d)/"led.jsonl"; rep=Path(d)/"rep.json"
+            inp.write_text(json.dumps(event)+"\n")
+            led.write_text(json.dumps(old)+"\n")
+            report=m.build(
+                inp,led,rep,1,
+                verifier=lambda *args,**kwargs: self.fail("migration must not require network"),
+                now="2026-09-21T05:00:00+00:00",
+            )
+            row=json.loads(led.read_text().splitlines()[0])
+        self.assertEqual(row["easyMiningAttribution"],"EASYMINING_CONFIRMED")
+        self.assertAlmostEqual(row["niceHashPayoutRewardNative"],3.06817328,places=8)
+        self.assertAlmostEqual(row["payoutToCoinbasePercent"],97.0,places=5)
+        self.assertEqual(report["easyMiningAttributionCounts"]["EASYMINING_CONFIRMED"],1)
 
     def test_bch_blockchair_fallback_verifies_969090_and_units(self):
         height=969090
