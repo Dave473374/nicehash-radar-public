@@ -1,6 +1,6 @@
 {
-  "reportVersion": 2,
-  "generatedAt": "2026-09-21T10:33:03.053901+00:00",
+  "reportVersion": 3,
+  "generatedAt": "2026-09-21T12:20:47+00:00",
   "source": "SANITIZED_GLOBAL_COMPLETED_EASY_ORDERS",
   "modelUse": "NEW_CALIBRATED_SHADOW_ONLY",
   "currentProductionModelChanged": false,
@@ -16,163 +16,189 @@
     "reportContainsAggregatesOnly": true
   },
   "scope": {
-    "inputOrders": 200,
-    "uniqueOrders": 200,
+    "inputOrders": 400,
+    "uniqueOrders": 400,
     "duplicateOrdersRemoved": 0,
-    "matchedCurrentRadarOrders": 167,
-    "skippedOrders": 33,
+    "matchedCurrentRadarOrders": 344,
+    "skippedOrders": 56,
     "skipReasons": {
-      "OUT_OF_CURRENT_SCOPE": 29,
-      "NO_RADAR_MATCH": 4
+      "OUT_OF_CURRENT_SCOPE": 46,
+      "NO_RADAR_MATCH": 10
     }
   },
   "batchAudit": {
-    "sanitizedBatches": 2,
+    "sanitizedBatches": 4,
     "batchSizes": [
+      100,
+      100,
       100,
       100
     ],
     "crossBatchExactDuplicates": 0,
-    "priorBatch": {
-      "inputOrders": 100,
-      "matchedCurrentRadarOrders": 76,
-      "hits": 2,
-      "misses": 74
-    },
-    "latestBatch": {
-      "inputOrders": 100,
-      "currentScopeOrders": 95,
-      "matchedCurrentRadarOrders": 91,
-      "hits": 2,
-      "misses": 89,
-      "outOfCurrentScope": 5,
-      "noRadarMatch": 4
-    },
-    "latestBatchMatchMethod": "Latest valid causal buy-feed Git snapshot at or before order start, maximum age 2h, exact package+coin+currency matching. Gold 5 had no eligible Radar package match in the causal window.",
+    "batches": [
+      {
+        "batch": "orders-safe",
+        "inputOrders": 100,
+        "matchedCurrentRadarOrders": 76,
+        "hits": 2,
+        "misses": 74
+      },
+      {
+        "batch": "orders2-safe",
+        "inputOrders": 100,
+        "currentScopeOrders": 95,
+        "matchedCurrentRadarOrders": 91,
+        "hits": 2,
+        "misses": 89,
+        "outOfCurrentScope": 5,
+        "noRadarMatch": 4
+      },
+      {
+        "batch": "orders4-safe",
+        "inputOrders": 100,
+        "currentScopeOrders": 89,
+        "matchedCurrentRadarOrders": 83,
+        "hits": 3,
+        "misses": 80,
+        "outOfCurrentScope": 11,
+        "noRadarMatch": 6
+      },
+      {
+        "batch": "orders5-safe",
+        "inputOrders": 100,
+        "currentScopeOrders": 94,
+        "matchedCurrentRadarOrders": 94,
+        "hits": 4,
+        "misses": 90,
+        "outOfCurrentScope": 6,
+        "noRadarMatch": 0
+      }
+    ],
+    "latestBatchMatchMethod": "Latest valid causal buy-feed Git snapshot at or before order start, maximum age 2h, exact package+coin+currency matching.",
     "individualOrdersPersisted": false
   },
   "overall": {
-    "orders": 167,
-    "hits": 4,
-    "misses": 163,
-    "hitRatePercent": 2.3952
+    "orders": 344,
+    "hits": 11,
+    "misses": 333,
+    "hitRatePercent": 3.1977
   },
   "roi": {
     "status": "UNAVAILABLE",
     "ordersWithCompleteRoi": 0,
-    "matchedOrders": 167
+    "matchedOrders": 344
   },
   "signalStats": [
     {
       "signal": "BUY NOW",
-      "orders": 1,
+      "orders": 3,
       "hits": 0,
-      "misses": 1,
+      "misses": 3,
       "hitRatePercent": 0,
-      "averageExpectedReturnPercent": 95.771,
-      "averageQualityVs24hPercent": 15.712,
-      "averageQualityVs7dPercent": 17.4389
+      "averageExpectedReturnPercent": 102.1758,
+      "averageQualityVs24hPercent": 11.9175,
+      "averageQualityVs7dPercent": 19.852
     },
     {
       "signal": "GOOD",
-      "orders": 23,
-      "hits": 1,
-      "misses": 22,
-      "hitRatePercent": 4.3478,
-      "averageExpectedReturnPercent": 96.4716,
-      "averageQualityVs24hPercent": 9.3044,
-      "averageQualityVs7dPercent": 11.9038
+      "orders": 54,
+      "hits": 4,
+      "misses": 50,
+      "hitRatePercent": 7.4074,
+      "averageExpectedReturnPercent": 93.9537,
+      "averageQualityVs24hPercent": 11.6267,
+      "averageQualityVs7dPercent": 10.9265
     },
     {
       "signal": "WAIT",
-      "orders": 118,
-      "hits": 3,
-      "misses": 115,
-      "hitRatePercent": 2.5424,
-      "averageExpectedReturnPercent": 79.0854,
-      "averageQualityVs24hPercent": -5.3399,
-      "averageQualityVs7dPercent": -5.5527
+      "orders": 258,
+      "hits": 6,
+      "misses": 252,
+      "hitRatePercent": 2.3256,
+      "averageExpectedReturnPercent": 79.105,
+      "averageQualityVs24hPercent": -2.1971,
+      "averageQualityVs7dPercent": -3.2
     },
     {
       "signal": "NO BUY",
-      "orders": 25,
-      "hits": 0,
-      "misses": 25,
-      "hitRatePercent": 0,
-      "averageExpectedReturnPercent": 85.536,
-      "averageQualityVs24hPercent": -10.6503,
-      "averageQualityVs7dPercent": -2.4409
+      "orders": 29,
+      "hits": 1,
+      "misses": 28,
+      "hitRatePercent": 3.4483,
+      "averageExpectedReturnPercent": 83.3206,
+      "averageQualityVs24hPercent": -10.713,
+      "averageQualityVs7dPercent": -4.1929
     }
   ],
   "packageStats": [
     {
-      "packageName": "Gold S",
-      "orders": 42,
-      "hits": 0,
-      "misses": 42,
-      "hitRatePercent": 0
+      "packageName": "Bronze S",
+      "orders": 66,
+      "hits": 1,
+      "misses": 65,
+      "hitRatePercent": 1.5152
     },
     {
-      "packageName": "Bronze S",
-      "orders": 35,
-      "hits": 1,
-      "misses": 34,
-      "hitRatePercent": 2.8571
+      "packageName": "Gold S",
+      "orders": 66,
+      "hits": 0,
+      "misses": 66,
+      "hitRatePercent": 0
     },
     {
       "packageName": "Palladium S",
-      "orders": 29,
-      "hits": 0,
-      "misses": 29,
-      "hitRatePercent": 0
+      "orders": 66,
+      "hits": 1,
+      "misses": 65,
+      "hitRatePercent": 1.5152
     },
     {
       "packageName": "Silver S",
-      "orders": 27,
+      "orders": 58,
       "hits": 1,
-      "misses": 26,
-      "hitRatePercent": 3.7037
+      "misses": 57,
+      "hitRatePercent": 1.7241
     },
     {
       "packageName": "Palladium M",
-      "orders": 9,
-      "hits": 1,
-      "misses": 8,
-      "hitRatePercent": 11.1111
-    },
-    {
-      "packageName": "Silver 5",
-      "orders": 9,
-      "hits": 0,
-      "misses": 9,
-      "hitRatePercent": 0
+      "orders": 35,
+      "hits": 5,
+      "misses": 30,
+      "hitRatePercent": 14.2857
     },
     {
       "packageName": "Silver M",
-      "orders": 6,
+      "orders": 17,
+      "hits": 1,
+      "misses": 16,
+      "hitRatePercent": 5.8824
+    },
+    {
+      "packageName": "Silver 5",
+      "orders": 14,
       "hits": 0,
-      "misses": 6,
+      "misses": 14,
       "hitRatePercent": 0
     },
     {
       "packageName": "Gold M",
-      "orders": 5,
+      "orders": 8,
       "hits": 0,
-      "misses": 5,
+      "misses": 8,
       "hitRatePercent": 0
     },
     {
       "packageName": "Bronze M",
-      "orders": 3,
+      "orders": 7,
       "hits": 0,
-      "misses": 3,
+      "misses": 7,
       "hitRatePercent": 0
     },
     {
       "packageName": "Silver 20",
-      "orders": 1,
+      "orders": 5,
       "hits": 0,
-      "misses": 1,
+      "misses": 5,
       "hitRatePercent": 0
     },
     {
@@ -181,41 +207,48 @@
       "hits": 1,
       "misses": 0,
       "hitRatePercent": 100
+    },
+    {
+      "packageName": "Titanium S",
+      "orders": 1,
+      "hits": 1,
+      "misses": 0,
+      "hitRatePercent": 100
     }
   ],
   "coinStats": [
     {
-      "coin": "BTC",
-      "orders": 47,
-      "hits": 0,
-      "misses": 47,
-      "hitRatePercent": 0
+      "coin": "LTC",
+      "orders": 101,
+      "hits": 6,
+      "misses": 95,
+      "hitRatePercent": 5.9406
     },
     {
       "coin": "BCH",
-      "orders": 43,
-      "hits": 1,
-      "misses": 42,
-      "hitRatePercent": 2.3256
+      "orders": 94,
+      "hits": 2,
+      "misses": 92,
+      "hitRatePercent": 2.1277
     },
     {
-      "coin": "LTC",
-      "orders": 38,
-      "hits": 1,
-      "misses": 37,
-      "hitRatePercent": 2.6316
+      "coin": "BTC",
+      "orders": 74,
+      "hits": 0,
+      "misses": 74,
+      "hitRatePercent": 0
     },
     {
       "coin": "ZEC",
-      "orders": 38,
+      "orders": 73,
       "hits": 1,
-      "misses": 37,
-      "hitRatePercent": 2.6316
+      "misses": 72,
+      "hitRatePercent": 1.3699
     },
     {
       "coin": "KAS",
-      "orders": 1,
-      "hits": 1,
+      "orders": 2,
+      "hits": 2,
       "misses": 0,
       "hitRatePercent": 100
     }
@@ -223,16 +256,16 @@
   "currencyStats": [
     {
       "currencyMarket": "BTC",
-      "orders": 157,
-      "hits": 4,
-      "misses": 153,
-      "hitRatePercent": 2.5478
+      "orders": 325,
+      "hits": 11,
+      "misses": 314,
+      "hitRatePercent": 3.3846
     },
     {
       "currencyMarket": "USDT",
-      "orders": 10,
+      "orders": 19,
       "hits": 0,
-      "misses": 10,
+      "misses": 19,
       "hitRatePercent": 0
     }
   ],
@@ -242,6 +275,6 @@
     "Do not use soloMiningSharesMaxPercent as a live predictive feature.",
     "Do not infer ROI from HIT/MISS-only admin rows without explicit payout amounts.",
     "Global order calibration remains separate from event-level block calibration.",
-    "Latest sanitized batch is aggregate-only in the public report; individual order rows remain outside the public repository."
+    "All four sanitized batches are aggregate-only in the public report; individual order rows remain outside the public repository."
   ]
 }
