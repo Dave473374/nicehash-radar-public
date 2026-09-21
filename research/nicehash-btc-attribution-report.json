@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-21T12:37:06.077824+00:00",
+  "role": "NICEHASH_BTC_PRODUCT_ATTRIBUTION_RESEARCH_ONLY",
+  "currentProductionModelChanged": false,
+  "canRaiseBuySignal": false,
+  "canSupplyMissDenominator": false,
+  "automaticPurchase": false,
+  "niceHashPoolBlockCount": 373,
+  "easyMiningConfirmedCount": 2,
+  "niceHashUnknownCount": 371,
+  "conflictingEvidenceCount": 0,
+  "nonEasyConfirmedCount": 0,
+  "attributionCounts": {
+    "NICEHASH_UNKNOWN": 371,
+    "EASYMINING_CONFIRMED": 2
+  },
+  "coinbaseAddressStats": [
+    {
+      "address": "bc1q85z0lxe86pkcg2fmppfnykat2375s0pnxjx9sc",
+      "totalBlocks": 28,
+      "easyMiningConfirmedBlocks": 0,
+      "niceHashUnknownBlocks": 28,
+      "conflictingEvidenceBlocks": 0
+    },
+    {
+      "address": "bc1q28d6w54p3xc03a2j5ppmkua09akep9vtke20ny",
+      "totalBlocks": 2,
+      "easyMiningConfirmedBlocks": 2,
+      "niceHashUnknownBlocks": 0,
+      "conflictingEvidenceBlocks": 0
+    },
+    {
+      "address": "bc1qlltnwqnx4esnkux675k7j5ffx97ue9lkyxvhw0",
+      "totalBlocks": 2,
+      "easyMiningConfirmedBlocks": 2,
+      "niceHashUnknownBlocks": 0,
+      "conflictingEvidenceBlocks": 0
+    }
+  ],
+  "definitions": {
+    "EASYMINING_CONFIRMED": "Exact BTC block height+hash appears in NiceHash public singleReward with package identity.",
+    "NICEHASH_UNKNOWN": "mempool.space attributes the BTC block to NiceHash, but no exact EasyMining source match is present.",
+    "CONFLICTING_EVIDENCE": "Source evidence conflicts at the same BTC block height or exact block identity.",
+    "NON_EASY_CONFIRMED": "Reserved for explicit product-level NON-EasyMining evidence; absence from singleReward is never enough."
+  },
+  "policy": "NiceHash pool attribution is not EasyMining attribution. Coinbase payout addresses are recorded as public on-chain context only and are not hard-coded as product classifiers. A NiceHash-only block remains NICEHASH_UNKNOWN until explicit product-level evidence exists."
+}
