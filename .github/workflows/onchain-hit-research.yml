@@ -10,9 +10,13 @@ on:
       - scripts/collect_realized_blocks.py
       - scripts/backfill_public_easymining_hits.py
       - scripts/verify_onchain_hits.py
+      - scripts/collect_mempool_nicehash_btc_blocks.py
+      - scripts/classify_nicehash_btc_blocks.py
       - tests/test_public_hit_backfill.py
       - tests/test_onchain_hit_verification.py
+      - tests/test_nicehash_btc_attribution.py
       - docs/onchain-hit-verification.md
+      - docs/nicehash-btc-attribution-research.md
       - .github/workflows/onchain-hit-research.yml
 
 concurrency:
@@ -39,7 +43,7 @@ jobs:
           python3 scripts/check_private_api_policy.py
       - name: Unit tests without network
         run: |
-          python3 -m unittest tests.test_public_hit_backfill tests.test_onchain_hit_verification -v
+          python3 -m unittest tests.test_public_hit_backfill tests.test_onchain_hit_verification tests.test_nicehash_btc_attribution -v
       - name: Small public-network smoke
         run: |
           python3 scripts/collect_realized_blocks.py --pages 2 --output /tmp/realized-blocks.jsonl
@@ -51,7 +55,17 @@ jobs:
             --ledger /tmp/onchain-hit-verification.jsonl \
             --report /tmp/onchain-hit-report.json \
             --max-new 8
+          python3 scripts/collect_mempool_nicehash_btc_blocks.py \
+            --output /tmp/mempool-nicehash-btc-blocks.jsonl \
+            --max-pages 1 \
+            --coinbase-limit 10
+          python3 scripts/classify_nicehash_btc_blocks.py \
+            --pool-input /tmp/mempool-nicehash-btc-blocks.jsonl \
+            --easy-input /tmp/public-easymining-hit-history.jsonl \
+            --output /tmp/nicehash-btc-attribution.jsonl \
+            --report /tmp/nicehash-btc-attribution-report.json
           cat /tmp/onchain-hit-report.json
+          cat /tmp/nicehash-btc-attribution-report.json
 
   publish:
     needs: verify
@@ -82,11 +96,21 @@ jobs:
             --input /tmp/deep-realized-blocks.jsonl \
             --output research/public-easymining-hit-history.jsonl
           python3 scripts/verify_onchain_hits.py --max-new 24
+          python3 scripts/collect_mempool_nicehash_btc_blocks.py \
+            --max-pages 10 \
+            --coinbase-limit 30
+          python3 scripts/classify_nicehash_btc_blocks.py
       - name: Persist research-only outputs
         run: |
           git config user.name 'NiceHash Radar Bot'
           git config user.email 'actions@github.com'
-          git add research/public-easymining-hit-history.jsonl research/onchain-hit-verification.jsonl research/onchain-hit-report.json
+          git add \
+            research/public-easymining-hit-history.jsonl \
+            research/onchain-hit-verification.jsonl \
+            research/onchain-hit-report.json \
+            research/mempool-nicehash-btc-blocks.jsonl \
+            research/nicehash-btc-attribution.jsonl \
+            research/nicehash-btc-attribution-report.json
           git diff --cached --quiet && exit 0
           git commit -m 'Update public on-chain HIT research (no decision changes)'
           for attempt in 1 2 3; do
