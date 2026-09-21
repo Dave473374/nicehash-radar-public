@@ -107,7 +107,7 @@ def parse_source_time(value):
 
 def common(event, now):
     return {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "eventId": source_event_id(event),
         "verifiedAt": now,
         "coin": str(event.get("coin") or "").upper() or None,
@@ -152,13 +152,10 @@ def verify_mempool(event, opener, now):
         if vals and all(finite(x) for x in vals):
             reward_sats = sum(float(x) for x in vals)
     reward_native = reward_sats / 100_000_000 if reward_sats is not None else None
+    payout_native = payout_native_from_public_reward(event)
     payout_ratio = None
-    try:
-        payout = float(event.get("payoutReward"))
-        if math.isfinite(payout) and payout >= 0 and reward_native and reward_native > 0:
-            payout_ratio = payout / reward_native * 100
-    except (TypeError, ValueError):
-        pass
+    if payout_native is not None and reward_native and reward_native > 0:
+        payout_ratio = payout_native / reward_native * 100
 
     if tag_class == "NICEHASH_TAG":
         status = "VERIFIED_ON_CHAIN_NICEHASH_TAG"
@@ -181,6 +178,7 @@ def verify_mempool(event, opener, now):
         "coinbaseTagClass": tag_class,
         "coinbaseTag": tag,
         "coinbaseRewardNative": round(reward_native, 12) if reward_native is not None else None,
+        "niceHashPayoutRewardNative": round(payout_native, 12) if payout_native is not None else None,
         "payoutToCoinbasePercent": round(payout_ratio, 6) if payout_ratio is not None else None,
     }
 
@@ -212,6 +210,96 @@ def payout_native_from_public_reward(event):
     if coin in {"BTC", "BCH", "ZEC", "LTC", "DOGE"}:
         return value / 100_000_000
     return value
+
+
+def _easymining_source_evidence(event):
+    """Strong product-level evidence from the public EasyMining success endpoint."""
+    block_hash = str(event.get("blockHash") or "").strip()
+    return bool(
+        event.get("source") == "NICEHASH_PUBLIC_SINGLE_REWARD"
+        and event.get("packageName")
+        and event.get("packageId")
+        and event.get("blockHeight") is not None
+        and len(block_hash) == 64
+    )
+
+
+def _non_easy_source_evidence(event):
+    """Explicit external evidence that NiceHash classified the reward as non-EasyMining."""
+    return bool(
+        event.get("sourceClassification") == "NON_EASY_ORDER"
+        or event.get("source") == "NICEHASH_NON_EASY_ORDER"
+        or event.get("nonEasyOrder") is True
+    )
+
+
+def _nicehash_chain_evidence(record):
+    tag = str(record.get("coinbaseTagClass") or "")
+    status = str(record.get("status") or "")
+    return bool(
+        tag in {
+            "NICEHASH_TAG",
+            "NICEHASH_MINING_TAG",
+            "NICEHASH_SOLO_TAG",
+            "BCH_NINJA_NICEHASH_MINER_LABEL",
+            "BLOCKCHAIR_NICEHASH_MINER_LABEL",
+            "KASPA_MINER_INFO",
+        }
+        or status in {
+            "VERIFIED_ON_CHAIN_NICEHASH_TAG",
+            "VERIFIED_ON_CHAIN_OTHER_NICEHASH_TAG",
+            "VERIFIED_ON_CHAIN_NICEHASH_MINER_INFO",
+        }
+    )
+
+
+def apply_easymining_attribution(record, event):
+    """Keep pool evidence separate from EasyMining product attribution."""
+    out = dict(record)
+    easy = _easymining_source_evidence(event)
+    non_easy = _non_easy_source_evidence(event)
+    chain_nicehash = _nicehash_chain_evidence(out)
+
+    if easy and non_easy:
+        attribution = "CONFLICTING_EVIDENCE"
+        basis = "EASYMINING_SOURCE_AND_EXPLICIT_NON_EASY_SOURCE_CONFLICT"
+    elif non_easy:
+        attribution = "NON_EASY_CONFIRMED"
+        basis = "EXPLICIT_NON_EASY_ORDER_SOURCE"
+    elif easy:
+        attribution = "EASYMINING_CONFIRMED"
+        basis = "NICEHASH_PUBLIC_SINGLE_REWARD_PACKAGE_AND_BLOCK_IDENTITY"
+    elif chain_nicehash:
+        attribution = "NICEHASH_UNKNOWN"
+        basis = "NICEHASH_POOL_EVIDENCE_WITHOUT_PRODUCT_SOURCE"
+    else:
+        attribution = "UNKNOWN"
+        basis = "NO_PRODUCT_LEVEL_ATTRIBUTION_EVIDENCE"
+
+    out["easyMiningAttribution"] = attribution
+    out["easyMiningAttributionBasis"] = basis
+    out["niceHashPoolAttribution"] = "CONFIRMED" if chain_nicehash else "NOT_CONFIRMED"
+    out["niceHashTagDoesNotProveEasyMining"] = True
+    return out
+
+
+def refresh_payout_metrics(record, event):
+    """Normalize public reward units and repair legacy payout/reward ratios locally."""
+    out = dict(record)
+    payout_native = payout_native_from_public_reward(event)
+    reward_native = out.get("coinbaseRewardNative")
+    try:
+        reward_native = float(reward_native)
+    except (TypeError, ValueError, OverflowError):
+        reward_native = None
+    if reward_native is not None and not math.isfinite(reward_native):
+        reward_native = None
+
+    if payout_native is not None:
+        out["niceHashPayoutRewardNative"] = round(payout_native, 12)
+    if payout_native is not None and reward_native and reward_native > 0:
+        out["payoutToCoinbasePercent"] = round(payout_native / reward_native * 100, 6)
+    return out
 
 
 def verify_bch_blockchair(event, opener, now, primary_error=None):
@@ -571,24 +659,27 @@ def verify_kas(event, opener, now):
 def verify_event(event, opener=None, now=None):
     now = now or utc_now()
     coin = str(event.get("coin") or "").upper()
-    result = common(event, now)
+    base_result = common(event, now)
     if coin not in SUPPORTED:
-        return {**result, "status": "UNSUPPORTED_COIN", "explorer": None}
+        return apply_easymining_attribution(
+            {**base_result, "status": "UNSUPPORTED_COIN", "explorer": None},
+            event,
+        )
     opener = opener or urllib.request.build_opener(NoRedirect())
     try:
         if coin == "BCH":
             try:
-                primary = verify_mempool(event, opener, now)
+                verified = verify_mempool(event, opener, now)
             except Exception as primary_exc:
                 try:
-                    return verify_bch_blockchair(
+                    verified = verify_bch_blockchair(
                         event,
                         opener,
                         now,
                         primary_error=type(primary_exc).__name__,
                     )
                 except Exception as blockchair_exc:
-                    return verify_bch_ninja_hash(
+                    verified = verify_bch_ninja_hash(
                         event,
                         opener,
                         now,
@@ -597,27 +688,33 @@ def verify_event(event, opener=None, now=None):
                     )
             # A real primary hash conflict is evidence, not an availability
             # failure, so never hide it behind a fallback.
-            return primary
-        if coin == "BTC":
-            return verify_mempool(event, opener, now)
-        if coin in {"LTC", "DOGE"}:
+        elif coin == "BTC":
+            verified = verify_mempool(event, opener, now)
+        elif coin in {"LTC", "DOGE"}:
             try:
-                primary = verify_palladium_chain(event, opener, now)
+                verified = verify_palladium_chain(event, opener, now)
             except Exception as primary_exc:
-                return verify_palladium_ordnet_hash(
+                verified = verify_palladium_ordnet_hash(
                     event,
                     opener,
                     now,
                     primary_error=type(primary_exc).__name__,
                 )
-            return primary
-        if coin == "ZEC":
-            return verify_zec(event, opener, now)
-        if coin == "KAS":
-            return verify_kas(event, opener, now)
+        elif coin == "ZEC":
+            verified = verify_zec(event, opener, now)
+        elif coin == "KAS":
+            verified = verify_kas(event, opener, now)
+        else:
+            verified = {**base_result, "status": "UNSUPPORTED_COIN", "explorer": None}
     except Exception as exc:
-        return {**result, "status": "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH", "explorer": None, "errorType": type(exc).__name__}
-
+        verified = {
+            **base_result,
+            "status": "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH",
+            "explorer": None,
+            "errorType": type(exc).__name__,
+        }
+    verified = refresh_payout_metrics(verified, event)
+    return apply_easymining_attribution(verified, event)
 
 def load_jsonl(path):
     rows = []
@@ -636,7 +733,17 @@ def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, 
         raise ValueError("max_new must be 1..100")
     now = now or utc_now()
     events = load_jsonl(input_path)
+    event_by_id = {source_event_id(event): event for event in events if source_event_id(event)}
     latest = {source_event_id(r): r for r in load_jsonl(ledger_path) if source_event_id(r)}
+    # Schema-only migration: no network. Existing verified rows gain explicit
+    # EasyMining attribution and corrected payout units from their original source event.
+    for eid, row in list(latest.items()):
+        event = event_by_id.get(eid)
+        if event is not None:
+            latest[eid] = apply_easymining_attribution(
+                refresh_payout_metrics(row, event),
+                event,
+            )
     processed = 0
 
     # Record unsupported event types without spending explorer budget.
@@ -688,8 +795,11 @@ def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, 
     counts = Counter(str(r.get("status") or "UNKNOWN") for r in rows)
     by_coin = Counter(str(r.get("coin") or "UNKNOWN") for r in rows if str(r.get("status") or "").startswith("VERIFIED_ON_CHAIN"))
     verified = sum(v for k, v in counts.items() if k.startswith("VERIFIED_ON_CHAIN"))
+    attribution_counts = Counter(
+        str(r.get("easyMiningAttribution") or "UNKNOWN") for r in rows
+    )
     report = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": now,
         "role": "ONCHAIN_HIT_VERIFICATION_RESEARCH_ONLY",
         "currentProductionModelChanged": False,
@@ -703,6 +813,7 @@ def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, 
         "verifiedOnchainCount": verified,
         "verifiedByCoin": dict(by_coin),
         "statusCounts": dict(counts),
+        "easyMiningAttributionCounts": dict(attribution_counts),
         "supportedCoins": sorted(SUPPORTED),
         "packageCoverageIntent": {
             "Gold": "BTC",
@@ -711,7 +822,7 @@ def build(input_path, ledger_path, report_path, max_new, verifier=verify_event, 
             "Titanium": "KAS",
             "Palladium": "LTC + DOGE merged mining; each public event verified on its named chain only",
         },
-        "policy": "Independent chain audit only. Verified HITs are numerator/context evidence; no chain explorer supplies missing EasyMining tickets or a MISS denominator.",
+        "policy": "Product attribution and pool attribution are separate. /NiceHash/ or a NiceHash miner label proves pool evidence only; EasyMining requires the public singleReward package/block identity or another explicit product-level source. Verified HITs are numerator/context evidence; no chain explorer supplies missing EasyMining tickets or a MISS denominator.",
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
@@ -727,7 +838,7 @@ def main():
     args = parser.parse_args()
     report = build(args.input, args.ledger, args.report, args.max_new)
     print("ONCHAIN HIT VERIFICATION COMPLETE; research-only; no account access")
-    print(json.dumps({k: report[k] for k in ("inputEventCount","ledgerEventCount","processedThisRun","verifiedOnchainCount","verifiedByCoin","statusCounts")}, sort_keys=True))
+    print(json.dumps({k: report[k] for k in ("inputEventCount","ledgerEventCount","processedThisRun","verifiedOnchainCount","verifiedByCoin","statusCounts","easyMiningAttributionCounts")}, sort_keys=True))
 
 
 if __name__ == "__main__":
