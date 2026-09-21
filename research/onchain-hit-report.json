@@ -1,29 +1,32 @@
 {
-  "schemaVersion": 2,
-  "generatedAt": "2026-09-21T00:41:11.695597+00:00",
+  "schemaVersion": 3,
+  "generatedAt": "2026-09-21T06:41:54.549157+00:00",
   "role": "ONCHAIN_HIT_VERIFICATION_RESEARCH_ONLY",
   "currentProductionModelChanged": false,
   "canRaiseBuySignal": false,
   "canSupplyMissDenominator": false,
   "automaticPurchase": false,
   "successEventsOnly": true,
-  "inputEventCount": 4787,
-  "ledgerEventCount": 216,
+  "inputEventCount": 5891,
+  "ledgerEventCount": 231,
   "processedThisRun": 24,
-  "verifiedOnchainCount": 206,
+  "verifiedOnchainCount": 220,
   "verifiedByCoin": {
     "ZEC": 2,
-    "KAS": 176,
+    "KAS": 187,
     "DOGE": 15,
     "BTC": 2,
-    "BCH": 11
+    "BCH": 14
   },
   "statusCounts": {
-    "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH": 9,
-    "VERIFIED_ON_CHAIN_BLOCK_MATCH": 28,
-    "VERIFIED_ON_CHAIN_NICEHASH_MINER_INFO": 176,
+    "SOURCE_UNAVAILABLE_OR_SCHEMA_MISMATCH": 10,
+    "VERIFIED_ON_CHAIN_BLOCK_MATCH": 31,
+    "VERIFIED_ON_CHAIN_NICEHASH_MINER_INFO": 187,
     "CONFLICT_BLOCK_HASH": 1,
     "VERIFIED_ON_CHAIN_NICEHASH_TAG": 2
+  },
+  "easyMiningAttributionCounts": {
+    "EASYMINING_CONFIRMED": 231
   },
   "supportedCoins": [
     "BCH",
@@ -40,5 +43,5 @@
     "Titanium": "KAS",
     "Palladium": "LTC + DOGE merged mining; each public event verified on its named chain only"
   },
-  "policy": "Independent chain audit only. Verified HITs are numerator/context evidence; no chain explorer supplies missing EasyMining tickets or a MISS denominator."
+  "policy": "Product attribution and pool attribution are separate. /NiceHash/ or a NiceHash miner label proves pool evidence only; EasyMining requires the public singleReward package/block identity or another explicit product-level source. Verified HITs are numerator/context evidence; no chain explorer supplies missing EasyMining tickets or a MISS denominator."
 }
