@@ -1,0 +1,269 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-21T06:50:00Z",
+  "role": "BUY_RADAR_RESEARCH_SIGNAL_REGISTER",
+  "purpose": "Persistent promotion ledger for research signals, infrastructure findings and data-quality blockers so promising evidence is not forgotten or silently promoted.",
+  "statusOrder": [
+    "OBSERVATION",
+    "TRACKING",
+    "CANDIDATE",
+    "VALIDATED",
+    "PRODUCTION_ELIGIBLE",
+    "PRODUCTION"
+  ],
+  "governance": {
+    "humanApprovalRequiredForProduction": true,
+    "automaticPromotionAllowed": false,
+    "productionChangeRequiresDedicatedPr": true,
+    "baselineComparisonRequiredBeforeProduction": true,
+    "causalPreEntryEvidenceRequiredForBuyFeatures": true,
+    "missDenominatorOrAuthorizedOrderLevelOutcomesRequiredForPerformanceClaims": true,
+    "noSignalMayAffectBuyBeforeProduction": true,
+    "reviewRule": "On substantial BUY Radar research work, inspect this register and the linked current evidence. If a review trigger is met, surface it to the user and propose the next validation step. Never silently promote a signal."
+  },
+  "signals": [
+    {
+      "id": "BTC_NON_EASY_PAYOUT_PATTERN",
+      "title": "BTC payout-address pattern for NON-Easy NiceHash blocks",
+      "category": "ATTRIBUTION_SUPPORT",
+      "status": "TRACKING",
+      "canAffectBuySignal": false,
+      "productionEligible": false,
+      "hypothesis": "Repeated NiceHash pool coinbase payout addresses may help distinguish operational/non-EasyMining blocks from EasyMining player payout addresses, but an address must never be the sole classifier.",
+      "currentEvidenceSnapshot": {
+        "reviewedAt": "2026-09-21T06:45:00Z",
+        "explicitNonEasyExamples": [
+          {
+            "blockHeight": 967930,
+            "payoutAddress": "bc1q85z0lxe86pkcg2fmppfnykat2375s0pnxjx9sc",
+            "evidence": "User-provided NiceHash LOTTERY UI showed 'BTC reward found for NON easy order' and the payoutAddress."
+          }
+        ],
+        "publicPoolSmoke": {
+          "niceHashPoolBlocksSampled": 300,
+          "coinbaseRowsEnriched": 30,
+          "repeatedAddress": "bc1q85z0lxe86pkcg2fmppfnykat2375s0pnxjx9sc",
+          "repeatedAddressNiceHashUnknownBlocks": 28,
+          "confirmedEasyMiningBlocks": [
+            967915,
+            967911
+          ],
+          "confirmedEasyMiningUsedDifferentCoinbaseAddresses": true
+        },
+        "interpretation": "Strong pattern worth tracking; not enough to assert NON-Easy from address alone."
+      },
+      "linkedEvidence": [
+        "scripts/collect_mempool_nicehash_btc_blocks.py",
+        "scripts/classify_nicehash_btc_blocks.py",
+        "docs/nicehash-btc-attribution-research.md",
+        "research/public-easymining-hit-history.jsonl"
+      ],
+      "blockingIssues": [
+        "Only one explicit NON-Easy UI example is currently registered.",
+        "Absence from public singleReward is not proof of NON-EasyMining.",
+        "Payout addresses may rotate, be reused or serve more than one operational purpose."
+      ],
+      "reviewTriggers": [
+        "At least five explicit NON-Easy product-level examples across distinct BTC block heights are captured.",
+        "The repeated payout address has at least twenty independently observed NiceHash pool blocks and zero exact EasyMining-confirmed matches in the same evidence set.",
+        "A new explicit NON-Easy source or public endpoint becomes available."
+      ],
+      "promotionCriteria": {
+        "toCandidate": [
+          "At least five explicit NON-Easy product-level confirmations support the same address-pattern hypothesis.",
+          "No contradictory exact EasyMining product evidence is present for the candidate address pattern.",
+          "The address pattern is evaluated as supporting evidence only, never as a sole classifier."
+        ],
+        "toValidated": [
+          "A held-out set shows the pattern separates explicit NON-Easy from EasyMining-confirmed blocks without identity leakage.",
+          "Performance is reported with false-positive counts and address-rotation limitations."
+        ],
+        "toProductionEligible": [
+          "Any use is limited to attribution/data-quality support unless separate causal evidence shows incremental pre-entry BUY value.",
+          "A dedicated baseline comparison and rollback plan pass."
+        ]
+      },
+      "nextReviewWhen": "Any review trigger is met, or a new explicit NON-Easy example is captured."
+    },
+    {
+      "id": "MARKET_PRICING_LAG_V1",
+      "title": "Public market pricing-lag / work-per-native edge",
+      "category": "BUY_FEATURE",
+      "status": "TRACKING",
+      "canAffectBuySignal": false,
+      "productionEligible": false,
+      "hypothesis": "A pre-registered divergence between public market conditions and EasyMining ticket work-per-native cost may contain incremental pre-entry information.",
+      "currentEvidenceSnapshot": {
+        "reviewedAt": "2026-09-21T06:40:07Z",
+        "pairedObservations": 2170,
+        "eligibleLagPoints": 652,
+        "lagEpisodeCount": 9,
+        "marketEdgeVerdict": "NO_VERIFIED_EDGE",
+        "lagVerdict": "NO_VERIFIED_EDGE",
+        "walkForwardStatus": "INSUFFICIENT_LABELS"
+      },
+      "linkedEvidence": [
+        "research/market-edge-report.json",
+        "research/lag-report.json",
+        "research/lag-protocol-v1.json",
+        "research/market-edge-pairs.jsonl",
+        "docs/market-edge-research.md",
+        "docs/lag-episodes-v1.md",
+        "docs/lag-evidence-integrity.md"
+      ],
+      "blockingIssues": [
+        "Raw market price denomination and executable all-in buyer price are not independently verified.",
+        "Walk-forward labels remain insufficient.",
+        "Difficulty/hashrate input disagreements remain a separate unresolved data-quality issue.",
+        "Forward quote movement is not realized ticket ROI or HIT/MISS performance."
+      ],
+      "reviewTriggers": [
+        "research/lag-report.json no longer reports only INSUFFICIENT_LABELS for the pre-registered walk-forward evaluation.",
+        "Raw market price denomination/executable price semantics are independently verified.",
+        "Authorized order-level outcomes become sufficient for an out-of-sample incremental-value test."
+      ],
+      "promotionCriteria": {
+        "toCandidate": [
+          "The pre-registered lag hypothesis has evaluable causal walk-forward labels.",
+          "Price/unit semantics required by the hypothesis are independently resolved.",
+          "No material time-leakage or stale-source integrity blocker remains."
+        ],
+        "toValidated": [
+          "Out-of-sample comparison shows incremental value beyond the existing EV model.",
+          "Order-level HIT/MISS or realized ROI evidence supports the same direction without retrospective threshold fitting.",
+          "Losses, costs, uncertainty and clustered market episodes are reported."
+        ],
+        "toProductionEligible": [
+          "Shadow comparison against the frozen baseline succeeds under the current relay/model regime.",
+          "No deterioration of calibration, safety guards or alert quality is observed."
+        ]
+      },
+      "nextReviewWhen": "Walk-forward evidence becomes evaluable, pricing semantics are resolved, or enough authorized order-level outcomes accumulate."
+    },
+    {
+      "id": "PALLADIUM_S_60M_MOMENTUM_V1",
+      "title": "Palladium S 60-minute momentum candidate",
+      "category": "BUY_FEATURE",
+      "status": "CANDIDATE",
+      "canAffectBuySignal": false,
+      "productionEligible": false,
+      "hypothesis": "A frozen four-factor 60-minute pre-entry momentum pattern may separate better Palladium S entries from non-matches.",
+      "currentEvidenceSnapshot": {
+        "reviewedAt": "2026-09-21T06:50:00Z",
+        "frozenCandidate": true,
+        "validationStart": "2026-09-20T00:00:00Z",
+        "minimumEligibleOrdersBeforePerformanceClaim": 30,
+        "minimumHitsBeforePerformanceClaim": 3,
+        "preRegistrationEvidenceExcludedFromProspectiveValidation": true
+      },
+      "linkedEvidence": [
+        "research/palladium-s-momentum-candidate-v1.json",
+        "scripts/evaluate_prospective_candidate_v1.py",
+        "tests/test_prospective_candidate_v1.py",
+        "research/palladium-hit-control-report.json"
+      ],
+      "blockingIssues": [
+        "Prospective performance gate has not yet been demonstrated as satisfied.",
+        "Historical hypothesis-origin evidence is excluded from prospective validation.",
+        "Merged-mining math/input provenance issues must not be hidden by candidate performance."
+      ],
+      "reviewTriggers": [
+        "Prospective eligible Palladium S order count reaches 30.",
+        "Prospective Palladium S HIT count reaches 3.",
+        "The frozen candidate evaluator reports enough outcomes for its first performance claim."
+      ],
+      "promotionCriteria": {
+        "toValidated": [
+          "At least 30 eligible prospective orders and at least 3 prospective HITs are available, per the frozen candidate registration.",
+          "CORE_MATCH versus not-CORE_MATCH performance is evaluated without changing the frozen rules.",
+          "Causal pre-entry guards and same-relay requirements pass."
+        ],
+        "toProductionEligible": [
+          "The candidate adds incremental value over the existing production decision baseline.",
+          "A shadow rollout shows no safety/calibration regression and includes a rollback plan."
+        ]
+      },
+      "nextReviewWhen": "The frozen prospective evaluator reaches its registered 30-order and 3-HIT minimums."
+    },
+    {
+      "id": "ALERT_LATENCY_5M_PATH",
+      "title": "Five-minute phone delivery path",
+      "category": "INFRASTRUCTURE",
+      "status": "TRACKING",
+      "canAffectBuySignal": false,
+      "productionEligible": false,
+      "hypothesis": "Hourly phone checks may miss materially useful short PRIMARY BUY NOW/STRONG BUY windows.",
+      "currentEvidenceSnapshot": {
+        "reviewedAt": "2026-09-21T06:40:07Z",
+        "status": "INSUFFICIENT_EVIDENCE",
+        "resolvedWindowCount": 2,
+        "shortWindowCount": 2,
+        "shortWindowRate": 1,
+        "fiveMinutePushRecommended": false,
+        "verdict": "KEEP_HOURLY_FOR_NOW"
+      },
+      "linkedEvidence": [
+        "research/alert-latency-report.json",
+        "docs/alert-latency-policy.md"
+      ],
+      "blockingIssues": [
+        "The registered minimum is three resolved strict windows; only two are currently resolved."
+      ],
+      "reviewTriggers": [
+        "resolvedWindowCount reaches at least 3.",
+        "fiveMinutePushRecommended changes to true."
+      ],
+      "promotionCriteria": {
+        "toValidated": [
+          "Existing alert-latency policy recommends the five-minute path using its pre-registered thresholds."
+        ],
+        "toProductionEligible": [
+          "Delivery-path implementation is tested independently of BUY decision logic.",
+          "No duplicate-alert or notification-storm regression is introduced."
+        ]
+      },
+      "nextReviewWhen": "The third resolved qualifying window appears or the report recommendation changes."
+    },
+    {
+      "id": "MATH_INPUT_RECONCILIATION",
+      "title": "Difficulty/hashrate input reconciliation",
+      "category": "DATA_QUALITY_BLOCKER",
+      "status": "TRACKING",
+      "canAffectBuySignal": false,
+      "productionEligible": false,
+      "hypothesis": "Material feed-vs-difficulty model disagreement should be explained by verified upstream conventions before difficulty-derived estimates can be promoted.",
+      "currentEvidenceSnapshot": {
+        "reviewedAt": "2026-09-21T06:40:00Z",
+        "disagreementKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
+        "upstreamDifficultyConventionVerified": false,
+        "externalInputsIndependentlyVerified": false,
+        "productionThresholdsChanged": false
+      },
+      "linkedEvidence": [
+        "research/input-diagnostics.json",
+        "docs/math-market-input-findings.md"
+      ],
+      "blockingIssues": [
+        "Upstream difficulty convention is not independently verified.",
+        "Network hashrate estimates and difficulty-derived work can legitimately reflect different estimation windows.",
+        "A MATH PASS is consistency, not proof of external input truth."
+      ],
+      "reviewTriggers": [
+        "Upstream difficulty/network-hashrate field semantics are independently verified from authoritative source behavior.",
+        "A persistent disagreement changes materially after verified input normalization.",
+        "A proposed BUY feature depends on difficulty-derived EV."
+      ],
+      "promotionCriteria": {
+        "toValidated": [
+          "Field semantics, units, freshness and chain-specific difficulty conventions are independently verified.",
+          "The remaining disagreement is quantitatively explained and reproducible.",
+          "No unsupported chain receives a 2^32 difficulty conversion."
+        ],
+        "toProductionEligible": [
+          "Any production use passes shadow comparison without weakening existing WARNING/CRITICAL safeguards."
+        ]
+      },
+      "nextReviewWhen": "Authoritative upstream semantics are verified or a candidate depends on these inputs."
+    }
+  ]
+}

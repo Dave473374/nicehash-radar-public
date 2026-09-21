@@ -23,6 +23,10 @@ on:
       - "scripts/build_calibration_report.py"
       - "scripts/evaluate_prospective_candidate_v1.py"
       - "research/palladium-s-momentum-candidate-v1.json"
+      - "research/research-signal-register.json"
+      - "docs/research-signal-register.md"
+      - "scripts/validate_research_signal_register.py"
+      - "tests/test_research_signal_register.py"
       - "tests/test_prospective_candidate_v1.py"
       - "tests/test_workflow_publish_safety.py"
       - "scripts/test_phase0_correctness.py"
@@ -58,6 +62,8 @@ jobs:
             scripts/build_evidence_scorecard.py \
             scripts/build_calibration_report.py \
             scripts/evaluate_prospective_candidate_v1.py \
+            scripts/validate_research_signal_register.py \
+            tests/test_research_signal_register.py \
             tests/test_prospective_candidate_v1.py \
             scripts/test_phase0_correctness.py
 
@@ -89,6 +95,11 @@ jobs:
 
       - name: Test frozen prospective candidate v1
         run: python3 -m unittest tests.test_prospective_candidate_v1 -v
+
+      - name: Validate research signal register
+        run: |
+          python3 scripts/validate_research_signal_register.py
+          python3 -m unittest tests.test_research_signal_register -v
 
       - name: Run Phase 0 regression scenarios
         run: python3 scripts/test_phase0_correctness.py
