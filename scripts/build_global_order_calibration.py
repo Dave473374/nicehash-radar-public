@@ -39,6 +39,13 @@ source = json.loads(
 overall = source.get("overall") or {}
 orders = int(overall.get("orders") or 0)
 hits = int(overall.get("hits") or 0)
+lifecycle = source.get("lifecycleSemantics") or {}
+confidence_orders = int(
+    lifecycle.get("verifiedCompletedKnownOutcomeOrders") or 0
+)
+confidence_hits = int(
+    lifecycle.get("verifiedCompletedHits") or 0
+)
 
 report = {
     "reportVersion": 1,
@@ -49,9 +56,15 @@ report = {
     "modelUse": "NEW_CALIBRATED_SHADOW_ONLY",
     "currentProductionModelChanged": False,
     "confidence": confidence_for(
-        orders,
-        hits,
+        confidence_orders,
+        confidence_hits,
     ),
+    "confidenceBasis": {
+        "orders": confidence_orders,
+        "hits": confidence_hits,
+        "rule": "VERIFIED_COMPLETED_KNOWN_OUTCOMES_ONLY",
+        "legacyUnknownLifecycleExcludedFromPromotion": True,
+    },
     "confidenceRule": {
         "LOW": "<500 matched orders or <20 HITs",
         "MEDIUM": ">=500 matched orders and >=20 HITs",
@@ -80,6 +93,7 @@ report = {
     },
     "overall": overall,
     "roi": source.get("roi"),
+    "lifecycleSemantics": lifecycle,
     "rewardSemantics": source.get("rewardSemantics") or {
         "hitMissUnit": "COMPLETED_ORDER",
         "hitDefinition": "ONE_ORDER_WITH_AT_LEAST_ONE_REWARD",
@@ -111,6 +125,8 @@ report = {
         "Do not infer ROI from HIT/MISS-only admin rows without explicit payout amounts.",
         "Global order calibration remains separate from event-level block calibration.",
         "Reward/event counts are intensity evidence, not counts of winning orders; one winning order may produce many reward records.",
+        "Explicit CANCELLED, EXPIRED or other non-COMPLETED lifecycle rows are censored and must not be counted as MISS.",
+        "Legacy rows without preserved lifecycle status may remain descriptive evidence but cannot promote confidence.",
     ],
 }
 
