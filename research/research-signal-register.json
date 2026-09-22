@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-22T07:13:23.560Z",
+  "generatedAt": "2026-09-22T14:09:57.726Z",
   "role": "BUY_RADAR_RESEARCH_SIGNAL_REGISTER",
   "purpose": "Persistent promotion ledger for research signals, infrastructure findings and data-quality blockers so promising evidence is not forgotten or silently promoted.",
   "statusOrder": [
@@ -311,6 +311,53 @@
         ]
       },
       "nextReviewWhen": "Reward-count source semantics are verified or reward intensity is proposed as a model/calibration feature."
+    },
+    {
+      "id": "ORDER_LIFECYCLE_CENSORING",
+      "title": "Completed-order denominator and lifecycle censoring",
+      "category": "DATA_QUALITY_BLOCKER",
+      "status": "TRACKING",
+      "canAffectBuySignal": false,
+      "productionEligible": false,
+      "hypothesis": "Only verified COMPLETED orders should supply the ordinary HIT/MISS denominator. Explicit CANCELLED, EXPIRED or other non-COMPLETED rows are censored exposures and must not be converted into MISS.",
+      "currentEvidenceSnapshot": {
+        "reviewedAt": "2026-09-22T14:09:57.726Z",
+        "preferredDenominator": "VERIFIED_COMPLETED_ORDERS_WITH_KNOWN_OUTCOMES",
+        "explicitNonCompletedHandling": "CENSORED_NOT_MISS",
+        "legacySanitizedBatchesPreservedLifecycleStatus": false,
+        "legacyEvidenceRole": "PROVISIONAL_DESCRIPTIVE_ONLY_FOR_CONFIDENCE_PROMOTION",
+        "exactNonPublicLifecycleCountsPersisted": false,
+        "productionDecisionChanged": false
+      },
+      "linkedEvidence": [
+        "docs/order-lifecycle-semantics.md",
+        "scripts/collect_completed_orders.py",
+        "scripts/match_global_orders.py",
+        "scripts/build_global_order_calibration.py",
+        "tests/test_order_lifecycle_semantics.py"
+      ],
+      "blockingIssues": [
+        "Earlier sanitized global batches did not preserve lifecycle status.",
+        "Source-specific meanings of expired/pending/error lifecycle states are not independently verified.",
+        "Partial-duration cancelled tickets may have different exposure and refund semantics from completed orders."
+      ],
+      "reviewTriggers": [
+        "A future authorized order source preserves explicit lifecycle status.",
+        "Legacy batches are re-exported or independently verified with lifecycle state.",
+        "A proposed performance claim depends materially on rows whose lifecycle status is unknown."
+      ],
+      "promotionCriteria": {
+        "toValidated": [
+          "Explicit non-COMPLETED lifecycle states are consistently censored from HIT/MISS calibration.",
+          "Confidence calculations use only lifecycle-verified COMPLETED known outcomes.",
+          "Legacy unknown-status rows cannot silently become confidence-eligible."
+        ],
+        "toProductionEligible": [
+          "This item is a correctness guardrail rather than a BUY feature; production use is limited to denominator integrity.",
+          "Regression tests and safety guards pass without changing CURRENT/BUY thresholds."
+        ]
+      },
+      "nextReviewWhen": "A source with explicit lifecycle status is used for global calibration or legacy lifecycle can be independently verified."
     }
   ]
 }

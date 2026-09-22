@@ -1,6 +1,6 @@
 {
-  "reportVersion": 4,
-  "generatedAt": "2026-09-22T07:13:53.306Z",
+  "reportVersion": 5,
+  "generatedAt": "2026-09-22T14:09:54.413Z",
   "source": "SANITIZED_GLOBAL_COMPLETED_EASY_ORDERS",
   "modelUse": "NEW_CALIBRATED_SHADOW_ONLY",
   "currentProductionModelChanged": false,
@@ -276,7 +276,9 @@
     "Do not infer ROI from HIT/MISS-only admin rows without explicit payout amounts.",
     "Global order calibration remains separate from event-level block calibration.",
     "All four sanitized batches are aggregate-only in the public report; individual order rows remain outside the public repository.",
-    "Reward/event counts are intensity evidence, not counts of winning orders; one winning order may produce many reward records."
+    "Reward/event counts are intensity evidence, not counts of winning orders; one winning order may produce many reward records.",
+    "Explicit CANCELLED, EXPIRED or other non-COMPLETED lifecycle rows are censored and must not be counted as MISS.",
+    "Legacy rows without preserved lifecycle status remain provisional and cannot by themselves promote calibration confidence."
   ],
   "rewardSemantics": {
     "hitMissUnit": "COMPLETED_ORDER",
@@ -286,5 +288,14 @@
     "rewardCountCanSupplyHitMissDenominator": false,
     "missingRewardCountSynthesizedFromHit": false,
     "rewardIntensityStatus": "SEPARATE_RESEARCH_METRIC_SOURCE_UNIT_MUST_BE_VERIFIED"
-  }
+  },
+  "lifecycleSemantics": {
+    "preferredHitMissDenominator": "VERIFIED_COMPLETED_ORDERS_WITH_KNOWN_OUTCOMES",
+    "explicitNonCompletedHandling": "EXCLUDE_AS_CENSORED_NOT_MISS",
+    "legacyBatchesPreservedLifecycleStatus": false,
+    "legacyMatchedOrdersLifecycleStatus": "UNKNOWN_FROM_SANITIZED_BATCH_SCHEMA",
+    "legacyUnknownLifecycleCanSupportConfidencePromotion": false,
+    "currentAggregateCountsRetainedAsProvisionalHistoricalEvidence": true
+  },
+  "confidenceCaveat": "Legacy sanitized batches did not preserve lifecycle status; they remain descriptive/provisional and cannot by themselves promote confidence."
 }

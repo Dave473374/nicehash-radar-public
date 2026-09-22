@@ -16,6 +16,8 @@ on:
       - "scripts/build_global_order_calibration.py"
       - "scripts/build_daily_package_stats.py"
       - "tests/test_reward_order_semantics.py"
+      - "tests/test_order_lifecycle_semantics.py"
+      - "docs/order-lifecycle-semantics.md"
       - "docs/reward-order-semantics.md"
       - "tests/test_private_payout_integrity.py"
       - "scripts/match_mining_events.py"
@@ -74,6 +76,7 @@ jobs:
             scripts/validate_research_signal_register.py \
             tests/test_research_signal_register.py \
             tests/test_reward_order_semantics.py \
+            tests/test_order_lifecycle_semantics.py \
             tests/test_prospective_candidate_v1.py \
             scripts/test_phase0_correctness.py
 
@@ -105,6 +108,9 @@ jobs:
 
       - name: Test reward-event versus winning-order semantics
         run: python3 -m unittest tests.test_reward_order_semantics -v
+
+      - name: Test order lifecycle censoring semantics
+        run: python3 -m unittest tests.test_order_lifecycle_semantics -v
 
       - name: Test frozen prospective candidate v1
         run: python3 -m unittest tests.test_prospective_candidate_v1 -v

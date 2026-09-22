@@ -113,6 +113,19 @@ verification before any reward-intensity analysis.
 
 See `docs/reward-order-semantics.md`.
 
+### Order lifecycle censoring — TRACKING
+
+HIT/MISS calibration prefers lifecycle-verified `COMPLETED` orders. Explicit
+`CANCELLED`, `EXPIRED` or other non-COMPLETED states are censored rather
+than counted as MISS because they may not have received the planned exposure.
+
+Earlier sanitized batches did not preserve lifecycle status. They remain useful
+as provisional/descriptive evidence, but they cannot by themselves promote
+calibration confidence. Exact non-public lifecycle counts that motivated this
+guardrail are intentionally not persisted in the public repository.
+
+See `docs/order-lifecycle-semantics.md`.
+
 ## Adding a new signal
 
 Add a new object to the JSON register with:
