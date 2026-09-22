@@ -234,27 +234,40 @@ def get_return_btc_with_availability(order):
     return sum(values), True
 
 
-def get_reward_count(order):
-    reward_count = order.get("rewardCount")
+def get_reward_record_count_with_availability(order):
+    """Return source reward-record multiplicity without inventing it from HIT/MISS.
 
-    if isinstance(reward_count, int):
-        return reward_count
+    This is an intensity/source-record metric, not a winning-order count.
+    A single winning order can produce many reward records (notably on
+    high-block-frequency chains such as KAS/Titanium).
+    """
+    for field in ("rewardRecordCount", "rewardCount"):
+        if field not in order:
+            continue
+        value = order.get(field)
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and value >= 0
+        ):
+            return value, True, "EXPLICIT_" + field.upper()
+        return None, False, "INVALID_" + field.upper()
 
-    rewards = (
-        order.get("rewards")
-        or order.get("soloReward")
-    )
+    # The sanitizer explicitly marks whether the source supplied a reward list.
+    # If it did not, an empty sanitized list must not be mistaken for zero
+    # reward records.
+    if order.get("rewardRecordCountAvailable") is False:
+        return None, False, "SANITIZED_SOURCE_COUNT_UNAVAILABLE"
 
-    if isinstance(rewards, list) and rewards:
-        return len(rewards)
+    for field in ("rewards", "soloReward"):
+        if field not in order:
+            continue
+        rewards = order.get(field)
+        if not isinstance(rewards, list):
+            return None, False, "INVALID_" + field.upper() + "_LIST"
+        return len(rewards), True, field.upper() + "_LIST_LENGTH"
 
-    if order.get("hadReward") is True:
-        return 1
-
-    if order.get("isReward") is True:
-        return 1
-
-    return 0
+    return None, False, "UNAVAILABLE"
 
 
 def get_had_reward(order):
@@ -264,8 +277,13 @@ def get_had_reward(order):
     if isinstance(order.get("isReward"), bool):
         return order["isReward"]
 
-    return get_reward_count(order) > 0
+    reward_count, count_available, _ = (
+        get_reward_record_count_with_availability(order)
+    )
+    if count_available:
+        return reward_count > 0
 
+    return None
 
 def mean_numeric(rows, key):
     values = [
@@ -295,19 +313,30 @@ def make_hit_miss_stats(rows, key=None):
     result = []
 
     for label, group in groups.items():
+        known = [
+            row
+            for row in group
+            if isinstance(row.get("hadReward"), bool)
+        ]
         hits = sum(
-            1 for row in group
+            1 for row in known
             if row.get("hadReward") is True
         )
-        misses = len(group) - hits
+        misses = sum(
+            1 for row in known
+            if row.get("hadReward") is False
+        )
+        unknown = len(group) - len(known)
 
         item = {
             "orders": len(group),
+            "knownOutcomes": len(known),
             "hits": hits,
             "misses": misses,
+            "unknownOutcomes": unknown,
             "hitRatePercent": (
-                round(hits / len(group) * 100, 4)
-                if group
+                round(hits / len(known) * 100, 4)
+                if known
                 else None
             ),
         }
@@ -416,8 +445,19 @@ def find_match(order):
             realized_btc, return_available = (
                 get_return_btc_with_availability(order)
             )
-            reward_count = get_reward_count(order)
+            (
+                reward_record_count,
+                reward_record_count_available,
+                reward_count_source,
+            ) = get_reward_record_count_with_availability(order)
             had_reward = get_had_reward(order)
+            outcome = (
+                "HIT"
+                if had_reward is True
+                else "MISS"
+                if had_reward is False
+                else "UNKNOWN"
+            )
 
             roi_available = bool(
                 cost_btc is not None
@@ -442,9 +482,13 @@ def find_match(order):
                 ),
                 "currencyMarket": currency or None,
                 "actualCostBtc": cost_btc,
-                "rewardCount": reward_count,
+                "rewardCount": reward_record_count,
+                "rewardRecordCount": reward_record_count,
+                "rewardRecordCountAvailable": reward_record_count_available,
+                "rewardCountSource": reward_count_source,
+                "rewardCountUnit": "SOURCE_REWARD_RECORDS_NOT_WINNING_ORDERS",
                 "hadReward": had_reward,
-                "outcome": "HIT" if had_reward else "MISS",
+                "outcome": outcome,
                 "roiAvailable": roi_available,
                 "realizedReturnBtc": (
                     realized_btc
@@ -589,6 +633,11 @@ total_hits = sum(
     1 for row in matches
     if row.get("hadReward") is True
 )
+total_misses = sum(
+    1 for row in matches
+    if row.get("hadReward") is False
+)
+unknown_outcomes = len(matches) - total_hits - total_misses
 
 roi_rows = [
     row for row in matches
@@ -644,10 +693,20 @@ result = {
     "modelUse": "SHADOW_CALIBRATION_ONLY",
     "importantNote": (
         "One completed order is one exposure. isReward/hadReward "
-        "defines HIT/MISS. ROI is calculated only when an explicit "
-        "BTC reward payout amount is present; HIT/MISS-only batches "
-        "must not be interpreted as zero-return ROI batches."
+        "defines order-level HIT/MISS. Reward-record multiplicity is a "
+        "separate intensity metric and must never be treated as a count "
+        "of winning orders. If multiplicity is unavailable, a HIT must "
+        "not synthesize rewardCount=1. ROI is calculated only when an "
+        "explicit BTC reward payout amount is present."
     ),
+    "rewardSemantics": {
+        "hitMissUnit": "COMPLETED_ORDER",
+        "hitDefinition": "ONE_ORDER_WITH_AT_LEAST_ONE_REWARD",
+        "rewardCountUnit": "SOURCE_REWARD_RECORDS_NOT_WINNING_ORDERS",
+        "rewardCountMayExceedOnePerOrder": True,
+        "rewardCountCanSupplyHitMissDenominator": False,
+        "missingRewardCountSynthesizedFromHit": False,
+    },
     "inputOrders": len(orders_raw),
     "uniqueOrders": len(orders),
     "duplicateOrdersRemoved": duplicate_orders,
@@ -657,11 +716,16 @@ result = {
     "skipReasons": skip_reasons,
     "overall": {
         "orders": len(matches),
+        "knownOutcomes": total_hits + total_misses,
         "hits": total_hits,
-        "misses": len(matches) - total_hits,
+        "misses": total_misses,
+        "unknownOutcomes": unknown_outcomes,
         "hitRatePercent": (
-            round(total_hits / len(matches) * 100, 4)
-            if matches
+            round(
+                total_hits / (total_hits + total_misses) * 100,
+                4,
+            )
+            if (total_hits + total_misses)
             else None
         ),
     },
@@ -692,6 +756,7 @@ print("Valid matched orders:", len(matches))
 print("Skipped orders:", len(orders) - len(matches))
 print("Skip reasons:", skip_reasons)
 print("Hits:", total_hits)
-print("Misses:", len(matches) - total_hits)
+print("Misses:", total_misses)
+print("Unknown outcomes:", unknown_outcomes)
 print("ROI status:", roi_summary["status"])
 print("Global order matcher completed successfully")

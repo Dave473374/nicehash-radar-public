@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-21T06:50:00Z",
+  "generatedAt": "2026-09-22T07:13:23.560Z",
   "role": "BUY_RADAR_RESEARCH_SIGNAL_REGISTER",
   "purpose": "Persistent promotion ledger for research signals, infrastructure findings and data-quality blockers so promising evidence is not forgotten or silently promoted.",
   "statusOrder": [
@@ -264,6 +264,53 @@
         ]
       },
       "nextReviewWhen": "Authoritative upstream semantics are verified or a candidate depends on these inputs."
+    },
+    {
+      "id": "REWARD_EVENT_VS_WINNING_ORDER_SEMANTICS",
+      "title": "Reward-event multiplicity versus winning-order outcome",
+      "category": "DATA_QUALITY_BLOCKER",
+      "status": "TRACKING",
+      "canAffectBuySignal": false,
+      "productionEligible": false,
+      "hypothesis": "Order-level HIT/MISS and reward/event multiplicity are different units. One winning order can produce many reward records/events, especially on high-block-frequency chains such as KAS/Titanium, so reward counts must never substitute for winning-order counts.",
+      "currentEvidenceSnapshot": {
+        "reviewedAt": "2026-09-22T07:13:23.563Z",
+        "hitMissUnit": "ONE_COMPLETED_ORDER",
+        "rewardMultiplicityUnit": "SOURCE_DEPENDENT_REWARD_RECORD_OR_EVENT",
+        "highFrequencyChainExample": "KAS/Titanium can produce many rewards from one winning order.",
+        "exactNonPublicAggregateCountsPersisted": false,
+        "implementationGuard": "A binary HIT no longer synthesizes rewardCount=1 when multiplicity is unavailable.",
+        "productionDecisionChanged": false
+      },
+      "linkedEvidence": [
+        "docs/reward-order-semantics.md",
+        "scripts/match_global_orders.py",
+        "scripts/collect_completed_orders.py",
+        "scripts/build_daily_package_stats.py",
+        "tests/test_reward_order_semantics.py"
+      ],
+      "blockingIssues": [
+        "Exact semantics of source-specific reward counters are not independently verified across every source.",
+        "Merged-mining payout legs, reward records and successful block events may be different units.",
+        "Existing HIT/MISS-only safe batches often do not contain explicit reward multiplicity."
+      ],
+      "reviewTriggers": [
+        "A source contract or authoritative documentation defines reward-count semantics for an order source.",
+        "Authorized order-level outcomes include explicit reward multiplicity and complete payout data.",
+        "A KAS/Titanium reward-intensity analysis is proposed for calibration."
+      ],
+      "promotionCriteria": {
+        "toValidated": [
+          "Each reward-count source used in analysis has an explicit verified unit.",
+          "Binary HIT/MISS remains one completed order per exposure regardless of reward multiplicity.",
+          "Missing multiplicity remains unavailable and is never synthesized from a HIT."
+        ],
+        "toProductionEligible": [
+          "This item is a semantic guardrail, not a BUY feature; any production use is limited to enforcing unit separation in reports and calibration.",
+          "All relevant regression tests and aggregate-report checks pass without changing CURRENT/BUY decisions."
+        ]
+      },
+      "nextReviewWhen": "Reward-count source semantics are verified or reward intensity is proposed as a model/calibration feature."
     }
   ]
 }

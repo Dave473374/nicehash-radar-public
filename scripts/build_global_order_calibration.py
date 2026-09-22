@@ -80,6 +80,14 @@ report = {
     },
     "overall": overall,
     "roi": source.get("roi"),
+    "rewardSemantics": source.get("rewardSemantics") or {
+        "hitMissUnit": "COMPLETED_ORDER",
+        "hitDefinition": "ONE_ORDER_WITH_AT_LEAST_ONE_REWARD",
+        "rewardCountUnit": "SOURCE_REWARD_RECORDS_NOT_WINNING_ORDERS",
+        "rewardCountMayExceedOnePerOrder": True,
+        "rewardCountCanSupplyHitMissDenominator": False,
+        "missingRewardCountSynthesizedFromHit": False,
+    },
     "signalStats": source.get(
         "signalStats",
         [],
@@ -102,6 +110,7 @@ report = {
         "Do not use soloMiningSharesMaxPercent as a live predictive feature.",
         "Do not infer ROI from HIT/MISS-only admin rows without explicit payout amounts.",
         "Global order calibration remains separate from event-level block calibration.",
+        "Reward/event counts are intensity evidence, not counts of winning orders; one winning order may produce many reward records.",
     ],
 }
 
