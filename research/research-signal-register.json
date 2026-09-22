@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-22T14:09:57.726Z",
+  "generatedAt": "2026-09-22T14:34:53.969Z",
   "role": "BUY_RADAR_RESEARCH_SIGNAL_REGISTER",
   "purpose": "Persistent promotion ledger for research signals, infrastructure findings and data-quality blockers so promising evidence is not forgotten or silently promoted.",
   "statusOrder": [
@@ -358,6 +358,60 @@
         ]
       },
       "nextReviewWhen": "A source with explicit lifecycle status is used for global calibration or legacy lifecycle can be independently verified."
+    },
+    {
+      "id": "PALLADIUM_M_AGGREGATE_VALIDATION_V1",
+      "title": "Palladium M aggregate signal-outcome validation",
+      "category": "BUY_FEATURE",
+      "status": "TRACKING",
+      "canAffectBuySignal": false,
+      "productionEligible": false,
+      "hypothesis": "Periods dominated by favorable Palladium M Radar states may show better global completed-order outcome rates than WAIT-dominated periods.",
+      "currentEvidenceSnapshot": {
+        "reviewedAt": "2026-09-22T14:34:53.976Z",
+        "protocolFrozen": true,
+        "packageName": "Palladium M",
+        "primaryCoin": "LTC",
+        "currencyMarket": "BTC",
+        "outcomeGranularity": "DAILY_OR_MONTHLY_AGGREGATE",
+        "signalExposureSource": "PUBLIC_SAVED_BUY_FEED_HISTORY",
+        "aggregateEvidenceCanEstablishOrderLevelCausality": false,
+        "productionDecisionChanged": false
+      },
+      "linkedEvidence": [
+        "docs/palladium-m-aggregate-validation.md",
+        "scripts/build_palladium_m_signal_exposure.py",
+        "tests/test_palladium_m_signal_exposure.py"
+      ],
+      "blockingIssues": [
+        "Daily/monthly aggregates do not identify the exact entry signal seen by each order.",
+        "Reward-to-winning-order mapping must be independently verified before reward counts can become HIT counts.",
+        "Reward timestamp versus order-cohort bucketing semantics are not yet verified.",
+        "Lifecycle scope must be COMPLETED only; cancelled/expired exposures are censored.",
+        "Timezone used by aggregate outcome data must match the exposure reconstruction."
+      ],
+      "reviewTriggers": [
+        "A complete month of Palladium M COMPLETED aggregate outcomes is available with explicit timezone and verified reward semantics.",
+        "At least five GOOD-dominant and five WAIT-dominant aggregate-eligible days are available.",
+        "Authorized order-level Palladium M outcomes become available for direct entry-time validation."
+      ],
+      "promotionCriteria": {
+        "toCandidate": [
+          "The aggregate protocol is evaluated on held-out periods without changing its frozen thresholds.",
+          "GOOD-dominant versus WAIT-dominant outcome direction is stable across more than one calendar period.",
+          "No lifecycle, reward-unit, timezone or reward-bucketing blocker remains for the compared periods."
+        ],
+        "toValidated": [
+          "Order-level or equivalent causal evidence confirms the same direction seen in aggregate validation.",
+          "Package-normalized baseline and model-expected hit rates are reported with uncertainty.",
+          "The result remains stable under reasonable day-boundary and coverage sensitivity checks."
+        ],
+        "toProductionEligible": [
+          "A dedicated shadow comparison shows incremental value over the frozen CURRENT baseline.",
+          "No safety, calibration or alert-quality regression is observed."
+        ]
+      },
+      "nextReviewWhen": "A complete Palladium M aggregate outcome month is available or direct order-level causal outcomes become available."
     }
   ]
 }

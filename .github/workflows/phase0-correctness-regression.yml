@@ -17,6 +17,9 @@ on:
       - "scripts/build_daily_package_stats.py"
       - "tests/test_reward_order_semantics.py"
       - "tests/test_order_lifecycle_semantics.py"
+      - "scripts/build_palladium_m_signal_exposure.py"
+      - "tests/test_palladium_m_signal_exposure.py"
+      - "docs/palladium-m-aggregate-validation.md"
       - "docs/order-lifecycle-semantics.md"
       - "docs/reward-order-semantics.md"
       - "tests/test_private_payout_integrity.py"
@@ -65,6 +68,7 @@ jobs:
             scripts/match_global_orders.py \
             scripts/build_global_order_calibration.py \
             scripts/build_daily_package_stats.py \
+            scripts/build_palladium_m_signal_exposure.py \
             scripts/collect_completed_orders.py \
             scripts/match_mining_events.py \
             scripts/apply_math_consistency_shadow.py \
@@ -77,6 +81,7 @@ jobs:
             tests/test_research_signal_register.py \
             tests/test_reward_order_semantics.py \
             tests/test_order_lifecycle_semantics.py \
+            tests/test_palladium_m_signal_exposure.py \
             tests/test_prospective_candidate_v1.py \
             scripts/test_phase0_correctness.py
 
@@ -111,6 +116,9 @@ jobs:
 
       - name: Test order lifecycle censoring semantics
         run: python3 -m unittest tests.test_order_lifecycle_semantics -v
+
+      - name: Test Palladium M aggregate signal exposure
+        run: python3 -m unittest tests.test_palladium_m_signal_exposure -v
 
       - name: Test frozen prospective candidate v1
         run: python3 -m unittest tests.test_prospective_candidate_v1 -v
