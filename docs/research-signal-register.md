@@ -97,6 +97,22 @@ classified as model disagreement, not a verified source error. Upstream field
 semantics and chain-specific conventions must be independently verified before
 difficulty-derived estimates can be promoted.
 
+### Reward-event versus winning-order semantics — TRACKING
+
+Reward/event multiplicity is tracked as a data-quality guardrail. HIT/MISS is
+always order-level: one completed order with at least one reward is one winning
+order. Reward records/events are a separate intensity unit and may be numerous
+for one winning order, especially on high-block-frequency chains such as
+KAS/Titanium.
+
+The project must not derive a reward count of one merely because an order is a
+HIT. Missing reward multiplicity stays unavailable. Exact non-public aggregate
+counts that motivated this guardrail are intentionally not persisted in the
+public repository. Source-specific reward-count units still require explicit
+verification before any reward-intensity analysis.
+
+See `docs/reward-order-semantics.md`.
+
 ## Adding a new signal
 
 Add a new object to the JSON register with:
