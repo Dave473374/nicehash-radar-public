@@ -1,6 +1,6 @@
 {
-  "reportVersion": 3,
-  "generatedAt": "2026-09-21T12:20:47+00:00",
+  "reportVersion": 4,
+  "generatedAt": "2026-09-22T07:13:53.306Z",
   "source": "SANITIZED_GLOBAL_COMPLETED_EASY_ORDERS",
   "modelUse": "NEW_CALIBRATED_SHADOW_ONLY",
   "currentProductionModelChanged": false,
@@ -275,6 +275,16 @@
     "Do not use soloMiningSharesMaxPercent as a live predictive feature.",
     "Do not infer ROI from HIT/MISS-only admin rows without explicit payout amounts.",
     "Global order calibration remains separate from event-level block calibration.",
-    "All four sanitized batches are aggregate-only in the public report; individual order rows remain outside the public repository."
-  ]
+    "All four sanitized batches are aggregate-only in the public report; individual order rows remain outside the public repository.",
+    "Reward/event counts are intensity evidence, not counts of winning orders; one winning order may produce many reward records."
+  ],
+  "rewardSemantics": {
+    "hitMissUnit": "COMPLETED_ORDER",
+    "hitDefinition": "ONE_ORDER_WITH_AT_LEAST_ONE_REWARD",
+    "rewardCountUnit": "SOURCE_REWARD_RECORDS_NOT_WINNING_ORDERS",
+    "rewardCountMayExceedOnePerOrder": true,
+    "rewardCountCanSupplyHitMissDenominator": false,
+    "missingRewardCountSynthesizedFromHit": false,
+    "rewardIntensityStatus": "SEPARATE_RESEARCH_METRIC_SOURCE_UNIT_MUST_BE_VERIFIED"
+  }
 }
