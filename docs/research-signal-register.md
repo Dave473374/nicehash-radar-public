@@ -126,6 +126,20 @@ guardrail are intentionally not persisted in the public repository.
 
 See `docs/order-lifecycle-semantics.md`.
 
+### Palladium M aggregate validation v1 — TRACKING
+
+This protocol compares public saved Radar signal exposure with separately
+provided Palladium M daily/monthly aggregate outcomes. It is deliberately
+ecological/supporting evidence: daily aggregates do not identify the exact
+entry signal seen by each order.
+
+Only lifecycle-COMPLETED outcomes are eligible. Reward counts may become
+winning-order counts only after their source-specific mapping is verified.
+Mixed or poorly covered Radar days are excluded from the primary aggregate
+comparison. Production promotion still requires order-level or equivalent
+causal evidence.
+
+See `docs/palladium-m-aggregate-validation.md`.
 ## Adding a new signal
 
 Add a new object to the JSON register with:
