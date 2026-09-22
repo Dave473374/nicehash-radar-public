@@ -40,6 +40,17 @@ def sanitize_order(row):
         return None
 
     raw_rewards = row.get("soloReward")
+    raw_lifecycle_status = first_value(
+        row,
+        "status",
+        "orderStatus",
+        "state",
+    )
+    lifecycle_status = (
+        str(raw_lifecycle_status).strip().upper()
+        if raw_lifecycle_status not in (None, "")
+        else None
+    )
     reward_record_count_available = isinstance(raw_rewards, list)
     reward_record_count = (
         len(raw_rewards)
@@ -66,6 +77,8 @@ def sanitize_order(row):
         "isReward": row.get("isReward")
         if isinstance(row.get("isReward"), bool)
         else None,
+        "lifecycleStatus": lifecycle_status,
+        "lifecycleStatusAvailable": lifecycle_status is not None,
         "soloMiningSharesMaxPercent": row.get("soloMiningSharesMaxPercent"),
         "rewardRecordCount": reward_record_count,
         "rewardRecordCountAvailable": reward_record_count_available,
