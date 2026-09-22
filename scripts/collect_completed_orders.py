@@ -40,6 +40,12 @@ def sanitize_order(row):
         return None
 
     raw_rewards = row.get("soloReward")
+    reward_record_count_available = isinstance(raw_rewards, list)
+    reward_record_count = (
+        len(raw_rewards)
+        if reward_record_count_available
+        else None
+    )
     # Keep an unknown placeholder rather than erase a missing payout leg.
     # Otherwise the downstream matcher could mistake a partial sum for total ROI.
     rewards = (
@@ -61,6 +67,8 @@ def sanitize_order(row):
         if isinstance(row.get("isReward"), bool)
         else None,
         "soloMiningSharesMaxPercent": row.get("soloMiningSharesMaxPercent"),
+        "rewardRecordCount": reward_record_count,
+        "rewardRecordCountAvailable": reward_record_count_available,
         "soloReward": rewards,
     }
 
