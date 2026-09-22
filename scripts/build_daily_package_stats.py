@@ -326,8 +326,11 @@ for date, package in sorted(
                     else None
                 ),
                 "note": (
-                    "Event evidence is a successful-event numerator only "
-                    "and is never used as the completed-order denominator."
+                    "Event evidence is successful-event/intensity evidence only. "
+                    "A single winning order can produce many reward events, "
+                    "especially on high-block-frequency chains such as KAS. "
+                    "Event counts are never winning-order counts and never supply "
+                    "the completed-order HIT/MISS denominator."
                 ),
             },
         }
@@ -345,6 +348,10 @@ report = {
     },
     "denominatorPolicy": {
         "hitMissDenominator": "GLOBAL_COMPLETED_EASYMINING_ORDERS",
+        "winningOrderUnit": "ONE_COMPLETED_ORDER",
+        "rewardEventUnit": "SUCCESSFUL_EVENT_OR_SOURCE_REWARD_RECORD",
+        "rewardEventsMayExceedOnePerWinningOrder": True,
+        "rewardEventCountCanSupplyHitMissDenominator": False,
         "eventEvidenceRole": "SUCCESSFUL_EVENT_NUMERATOR_ONLY",
         "privateRoiRole": (
             "Computed only in private temporary calibration paths; "
