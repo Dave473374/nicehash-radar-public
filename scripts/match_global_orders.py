@@ -103,6 +103,10 @@ def order_fingerprint(order):
         order.get("payedAmount") or order.get("amountSpent"),
         order.get("soloMiningCoin") or order.get("coin"),
         order.get("soloMiningMergeCoin") or order.get("mergeCoin"),
+        order.get("lifecycleStatus")
+        or order.get("status")
+        or order.get("orderStatus")
+        or order.get("state"),
         order.get("isReward") if isinstance(order.get("isReward"), bool) else order.get("hadReward"),
     ]
 
@@ -285,6 +289,56 @@ def get_had_reward(order):
 
     return None
 
+def get_lifecycle_status(order):
+    for field in (
+        "lifecycleStatus",
+        "status",
+        "orderStatus",
+        "state",
+    ):
+        if field not in order:
+            continue
+        value = order.get(field)
+        if value in (None, ""):
+            continue
+        return str(value).strip().upper(), True, field
+
+    return None, False, "UNAVAILABLE"
+
+
+def order_lifecycle_eligibility(order):
+    status, available, source = get_lifecycle_status(order)
+
+    if not available:
+        return {
+            "eligible": True,
+            "status": None,
+            "statusAvailable": False,
+            "statusSource": source,
+            "classification": "LEGACY_STATUS_UNKNOWN",
+            "verifiedCompleted": False,
+        }
+
+    if status == "COMPLETED":
+        return {
+            "eligible": True,
+            "status": status,
+            "statusAvailable": True,
+            "statusSource": source,
+            "classification": "VERIFIED_COMPLETED",
+            "verifiedCompleted": True,
+        }
+
+    return {
+        "eligible": False,
+        "status": status,
+        "statusAvailable": True,
+        "statusSource": source,
+        "classification": "NON_COMPLETED_CENSORED",
+        "verifiedCompleted": False,
+    }
+
+
 def mean_numeric(rows, key):
     values = [
         float(row[key])
@@ -374,6 +428,10 @@ snapshot_points.sort(key=lambda item: item[0])
 def find_match(order):
     if not is_current_scope(order):
         return None, "OUT_OF_CURRENT_SCOPE"
+
+    lifecycle = order_lifecycle_eligibility(order)
+    if not lifecycle["eligible"]:
+        return None, "NON_COMPLETED_LIFECYCLE"
 
     order_start = parse_ts(
         order.get("startTs")
@@ -481,6 +539,11 @@ def find_match(order):
                     or order.get("mergeCoin")
                 ),
                 "currencyMarket": currency or None,
+                "lifecycleStatus": lifecycle["status"],
+                "lifecycleStatusAvailable": lifecycle["statusAvailable"],
+                "lifecycleStatusSource": lifecycle["statusSource"],
+                "lifecycleClassification": lifecycle["classification"],
+                "lifecycleVerifiedCompleted": lifecycle["verifiedCompleted"],
                 "actualCostBtc": cost_btc,
                 "rewardCount": reward_record_count,
                 "rewardRecordCount": reward_record_count,
@@ -582,21 +645,33 @@ for signal in SIGNALS:
     if not rows:
         continue
 
+    known = [
+        row
+        for row in rows
+        if isinstance(row.get("hadReward"), bool)
+    ]
     hits = sum(
-        1 for row in rows
+        1 for row in known
         if row.get("hadReward") is True
     )
+    misses = sum(
+        1 for row in known
+        if row.get("hadReward") is False
+    )
+    unknown = len(rows) - len(known)
 
     signal_stats.append(
         {
             "signal": signal,
             "orders": len(rows),
+            "knownOutcomes": len(known),
             "hits": hits,
-            "misses": len(rows) - hits,
+            "misses": misses,
+            "unknownOutcomes": unknown,
             "hitRatePercent": round(
-                hits / len(rows) * 100,
+                hits / len(known) * 100,
                 4,
-            ),
+            ) if known else None,
             "averageModelHitProbabilityPercent": mean_numeric(
                 rows,
                 "modelHitProbabilityPercent",
@@ -699,6 +774,33 @@ result = {
         "not synthesize rewardCount=1. ROI is calculated only when an "
         "explicit BTC reward payout amount is present."
     ),
+    "lifecycleSemantics": {
+        "hitMissEligibility": "EXPLICIT_COMPLETED_OR_LEGACY_STATUS_UNKNOWN",
+        "explicitNonCompletedHandling": "EXCLUDE_AS_CENSORED_NOT_MISS",
+        "verifiedCompletedMatchedOrders": sum(
+            1 for row in matches
+            if row.get("lifecycleVerifiedCompleted") is True
+        ),
+        "legacyStatusUnknownMatchedOrders": sum(
+            1 for row in matches
+            if row.get("lifecycleClassification") == "LEGACY_STATUS_UNKNOWN"
+        ),
+        "excludedNonCompletedOrders": skip_reasons.get(
+            "NON_COMPLETED_LIFECYCLE",
+            0,
+        ),
+        "verifiedCompletedKnownOutcomeOrders": sum(
+            1 for row in matches
+            if row.get("lifecycleVerifiedCompleted") is True
+            and isinstance(row.get("hadReward"), bool)
+        ),
+        "verifiedCompletedHits": sum(
+            1 for row in matches
+            if row.get("lifecycleVerifiedCompleted") is True
+            and row.get("hadReward") is True
+        ),
+        "legacyUnknownStatusCanSupportConfidencePromotion": False,
+    },
     "rewardSemantics": {
         "hitMissUnit": "COMPLETED_ORDER",
         "hitDefinition": "ONE_ORDER_WITH_AT_LEAST_ONE_REWARD",
