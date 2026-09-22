@@ -12,6 +12,11 @@ on:
       - "scripts/build_alert_events.py"
       - "scripts/match_private_orders.py"
       - "scripts/collect_completed_orders.py"
+      - "scripts/match_global_orders.py"
+      - "scripts/build_global_order_calibration.py"
+      - "scripts/build_daily_package_stats.py"
+      - "tests/test_reward_order_semantics.py"
+      - "docs/reward-order-semantics.md"
       - "tests/test_private_payout_integrity.py"
       - "scripts/match_mining_events.py"
       - "scripts/collect_calibration.py"
@@ -55,6 +60,10 @@ jobs:
           python3 -m py_compile \
             scripts/build_alert_events.py \
             scripts/match_private_orders.py \
+            scripts/match_global_orders.py \
+            scripts/build_global_order_calibration.py \
+            scripts/build_daily_package_stats.py \
+            scripts/collect_completed_orders.py \
             scripts/match_mining_events.py \
             scripts/apply_math_consistency_shadow.py \
             scripts/nicehash_private_readonly.py \
@@ -64,6 +73,7 @@ jobs:
             scripts/evaluate_prospective_candidate_v1.py \
             scripts/validate_research_signal_register.py \
             tests/test_research_signal_register.py \
+            tests/test_reward_order_semantics.py \
             tests/test_prospective_candidate_v1.py \
             scripts/test_phase0_correctness.py
 
@@ -92,6 +102,9 @@ jobs:
 
       - name: Test private payout completeness without credentials
         run: python3 -m unittest discover -s tests -p 'test_private_payout_integrity.py' -v
+
+      - name: Test reward-event versus winning-order semantics
+        run: python3 -m unittest tests.test_reward_order_semantics -v
 
       - name: Test frozen prospective candidate v1
         run: python3 -m unittest tests.test_prospective_candidate_v1 -v
