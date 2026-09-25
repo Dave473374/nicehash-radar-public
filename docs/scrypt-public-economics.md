@@ -7,8 +7,14 @@ prices and display-unit metadata on a nominal five-minute schedule. The existing
 BUY feed already obtains public package quotes, reported chain conditions and
 Kraken/CoinPaprika FX. Neither collector is replaced or duplicated.
 
+The workflow reads one fresh quote from the **existing public relay** immediately
+before market collection, to a runner-temporary file. It does not overwrite the
+production `buy-feed.json` or create a second feed history. Redirects are not
+followed; no credentials/cookies are supplied. If that read fails, no older feed
+is substituted and the base market collector still runs.
+
 Immediately after the existing market collection,
-`enrich_scrypt_market_history.py` reads the already-saved `buy-feed.json` and
+`enrich_scrypt_market_history.py` reads this temporary quote and
 adds `scryptEconomics` only to the newest row of
 `calibration/public-market-history.jsonl`. It also writes
 `research/scrypt-economics-latest.json`. It makes **zero network requests**, uses
@@ -57,7 +63,8 @@ reward totals are not order-level HIT/MISS labels or a verified causal backtest.
 
 - Market receipt must be <=120 seconds old when enrichment runs. Only the row
   just collected is eligible; historical rows are left unchanged.
-- Feed `checked_at` must be aware, no later than that market receipt, and at most
+- The workflow uses a fresh relay response, not the potentially old repository
+  BUY feed. Feed `checked_at` must be aware, no later than market receipt, and at most
   420 seconds earlier. No older favourable fallback is allowed.
 - All three FX inputs (BTC/LTC/DOGE) must declare fresh finite positive values;
   their reported age PLUS age of the saved quote must be <=420 seconds.
@@ -94,3 +101,14 @@ Check `generatedAt` and status before relying on any saved report.
   https://www.nicehash.com/support/general-help/service-fees/other-fees
 - GitHub schedule limitations:
   https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule
+
+## First integration observation (2026-09-25)
+
+The initial PR smoke run successfully fetched the public NiceHash endpoints,
+but correctly rejected the saved repository BUY quote as too old. The recorded
+83 market snapshots over its last 24h had a median gap of approximately 1,026
+seconds (17.1 minutes), not five minutes. The workflow was therefore changed to
+read the existing public relay immediately before sampling the market. This
+fixes quote/market alignment; it does **not** fix GitHub scheduling latency.
+A reliable 1-5-minute collector cadence still requires a separate runtime or
+a change to scheduling architecture, not a claim that cron equals observed rate.
