@@ -4,6 +4,19 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "1,6,11,16,21,26,31,36,41,46,51,56 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/enrich_scrypt_market_history.py'
+      - 'scripts/apply_math_consistency_shadow.py'
+      - 'tests/test_scrypt_market_enrichment.py'
+      - '.github/workflows/collect-public-market-history.yml'
+  pull_request:
+    paths:
+      - 'scripts/enrich_scrypt_market_history.py'
+      - 'scripts/apply_math_consistency_shadow.py'
+      - 'tests/test_scrypt_market_enrichment.py'
+      - '.github/workflows/collect-public-market-history.yml'
 
 permissions:
   contents: write
@@ -13,7 +26,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  test-scrypt:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test conditional Scrypt enrichment (offline synthetic data)
+        run: python3 -m unittest discover -s tests -p test_scrypt_market_enrichment.py -v
+      - name: Public-source smoke test (no commit, no account access)
+        continue-on-error: true
+        run: |
+          curl --fail --silent --show-error --proto '=https' --max-time 30 --max-filesize 4000000 \
+            "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed" \
+            -o "$RUNNER_TEMP/scrypt-public-feed.json"
+          python3 scripts/collect_public_market_history.py
+          python3 scripts/enrich_scrypt_market_history.py --feed "$RUNNER_TEMP/scrypt-public-feed.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('research/scrypt-economics-latest.json').read_text())
+          print('LIVE RESEARCH STATUS:', r['status'], r['reasons'])
+          print('Observed cadence:', r['cadence'])
+          assert r['canRaiseSignal'] is False
+          assert r['verifiedMarketPremiumPercent'] is None
+          PY
+
   collect:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,8 +69,23 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Read fresh quote from existing public relay
+        continue-on-error: true
+        run: |
+          target="$RUNNER_TEMP/scrypt-public-feed.json"
+          rm -f "$target"
+          if ! curl --fail --silent --show-error --proto '=https' --max-time 30 --max-filesize 4000000 \
+            "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed" -o "$target"; then
+            rm -f "$target"
+            exit 1
+          fi
+
       - name: Collect public NiceHash market snapshot
         run: python3 scripts/collect_public_market_history.py
+
+      - name: Enrich same snapshot with conditional Palladium economics
+        continue-on-error: true
+        run: python3 scripts/enrich_scrypt_market_history.py --feed "$RUNNER_TEMP/scrypt-public-feed.json"
 
       - name: Verify public-only data policy
         run: |
@@ -46,6 +106,12 @@ jobs:
           assert latest.get("private_api_used") is False
           assert latest.get("admin_api_used") is False
           assert isinstance(latest.get("algorithms"), dict)
+          economics = latest.get("scryptEconomics")
+          if economics is not None:
+              assert economics.get("canRaiseSignal") is False
+              assert economics.get("currentProductionModelChanged") is False
+              assert economics.get("networkRequestsMade") == 0
+              assert economics.get("verifiedMarketPremiumPercent") is None
           print("PUBLIC-ONLY POLICY OK")
           PY
 
@@ -55,6 +121,9 @@ jobs:
           git config user.email "actions@github.com"
 
           git add calibration/public-market-history.jsonl
+          if [ -f research/scrypt-economics-latest.json ]; then
+            git add research/scrypt-economics-latest.json
+          fi
 
           if git diff --cached --quiet; then
             echo "No public market history changes"
