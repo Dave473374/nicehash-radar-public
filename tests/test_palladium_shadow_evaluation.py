@@ -243,8 +243,8 @@ class EvaluationTests(unittest.TestCase):
         e.check_outputs((e.OUTPUT,e.MARKDOWN),e.SOURCE_FILES)
 
     def test_local_dates_not_utc_dates(self):
-        # Validate local grouping directly with a trial starting near a UTC date boundary.
-        with patch('tests.test_palladium_shadow_evaluation.T',T.replace(hour=23)):
+        # Patch the actual loaded module under BOTH unittest module/discovery modes.
+        with patch.dict(bundle.__globals__,{'T':T.replace(hour=23)}):
             r=evaluate(bundle())
         self.assertIn('2026-09-27',r['packages']['Palladium M']['byLocalDate'])
 
