@@ -3,11 +3,13 @@ name: Radar Archive Integrity
 on:
   workflow_dispatch:
   push:
-    branches: ['fix/radar-archive-shards-62']
+    branches: [main]
     paths:
       - '.github/workflows/radar-archive-integrity.yml'
-      - 'scripts/*archive*.py'
+      - '.github/workflows/collect-calibration.yml'
+      - 'scripts/*.py'
       - 'tests/*archive*.py'
+      - 'docs/radar-snapshot-archive.md'
   pull_request:
     paths:
       - '.github/workflows/radar-archive-integrity.yml'
@@ -15,6 +17,8 @@ on:
       - 'scripts/*.py'
       - 'tests/*archive*.py'
       - 'docs/radar-snapshot-archive.md'
+      - 'calibration/radar-snapshots/**'
+      - 'calibration/radar-snapshots.jsonl'
 
 permissions:
   contents: read
@@ -34,11 +38,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Apply hash-locked I/O adapters for the migration dry run
-        run: |
-          if [ -f scripts/apply_radar_archive_adapters.py ]; then
-            python3 scripts/apply_radar_archive_adapters.py
-          fi
       - name: All offline regression tests and existing source policies
         run: |
           python3 -m unittest discover -s tests -v
@@ -53,61 +52,3 @@ jobs:
           path: /tmp/radar-archive-migration-verification.json
           retention-days: 30
           if-no-files-found: error
-
-  prepare-reviewed-branch:
-    needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/radar-archive-shards-62'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Check isolated branch has not advanced and migration is still pending
-        id: pending
-        env:
-          EXPECTED_HEAD: ${{ github.sha }}
-        run: |
-          test "$(git ls-remote origin refs/heads/fix/radar-archive-shards-62 | cut -f1)" = "$EXPECTED_HEAD"
-          if [ -f scripts/apply_radar_archive_adapters.py ]; then
-            echo 'apply=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'apply=false' >> "$GITHUB_OUTPUT"
-          fi
-      - name: Apply validated adapters, migrate exact bytes, and recover missing public snapshots
-        if: steps.pending.outputs.apply == 'true'
-        run: |
-          python3 scripts/apply_radar_archive_adapters.py
-          python3 scripts/verify_radar_archive_migration.py --report research/radar-archive-migration.json
-          python3 scripts/backfill_radar_snapshots.py
-          python3 scripts/collect_calibration.py
-          cp calibration/radar-snapshots/manifest.json /tmp/manifest-before-replay.json
-          python3 scripts/backfill_radar_snapshots.py
-          cmp /tmp/manifest-before-replay.json calibration/radar-snapshots/manifest.json
-          python3 scripts/radar_snapshot_archive.py verify > research/radar-archive-status.json
-          cat research/radar-archive-status.json
-          python3 -m unittest tests.test_radar_snapshot_archive tests.test_reward_context_integrity -v
-          python3 scripts/test_phase0_correctness.py
-      - name: Commit only reviewed I/O adapters and verified bounded archive to this PR branch
-        if: steps.pending.outputs.apply == 'true'
-        env:
-          EXPECTED_HEAD: ${{ github.sha }}
-        run: |
-          test "$(git ls-remote origin refs/heads/fix/radar-archive-shards-62 | cut -f1)" = "$EXPECTED_HEAD"
-          git config user.name 'NiceHash Radar Bot'
-          git config user.email 'actions@github.com'
-          git rm scripts/apply_radar_archive_adapters.py
-          git add -u -- scripts
-          python3 scripts/radar_snapshot_archive.py stage
-          git add research/radar-archive-migration.json research/radar-archive-status.json
-          python3 scripts/radar_snapshot_archive.py staged-guard
-          git diff --cached --stat
-          git commit -m 'Migrate Radar history losslessly and restore missing snapshots (#62)'
-          git push origin HEAD:refs/heads/fix/radar-archive-shards-62
-          echo "PREPARED_COMMIT=$(git rev-parse HEAD)"
