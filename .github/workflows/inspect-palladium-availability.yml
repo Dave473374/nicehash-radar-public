@@ -1,0 +1,81 @@
+name: Inspect Palladium Public Availability
+
+on:
+  pull_request:
+    paths: ['.github/workflows/inspect-palladium-availability.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read at most two public responses; no account credentials or raw payload publication
+        run: |
+          python3 - <<'PY'
+          from collections import Counter
+          from datetime import datetime,timezone
+          import hashlib,json,sys,urllib.request,urllib.error
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          from sample_public_market_burst import NoRedirect
+          sources={
+            'nicehash_public_packages':'https://api2.nicehash.com/hashpower/api/v2/public/solo/package',
+            'existing_public_relay':'https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed',
+          }
+          fields=('name','available','status','currencyAlgo','currency','currency_market',
+                  'price','price_native','duration','duration_seconds','projectedSpeed','projected_speed',
+                  'projectedSpeedUnit','projected_speed_unit')
+          def objects(x):
+              if isinstance(x,dict):
+                  if isinstance(x.get('name'),str) and ('price' in x or 'price_native' in x):yield x
+                  for v in x.values():yield from objects(v)
+              elif isinstance(x,list):
+                  for v in x:yield from objects(v)
+          def scalar_fields(x):
+              return {k:x[k] for k in fields if k in x and (x[k] is None or isinstance(x[k],(str,int,float,bool)))}
+          report={'role':'ONE_OFF_PUBLIC_AVAILABILITY_DIAGNOSTIC',
+                  'productionTrialUnchanged':True,'canRaiseSignal':False,'adminApiUsed':False,
+                  'privateApiUsed':False,'sources':{}}
+          for name,url in sources.items():
+              item={'url':url,'retrievedAt':datetime.now(timezone.utc).isoformat()}
+              report['sources'][name]=item
+              try:
+                  req=urllib.request.Request(url,method='GET',headers={'Accept':'application/json','User-Agent':'NiceHash-Radar-Public-Availability-Diagnostic/1.0'})
+                  with urllib.request.build_opener(NoRedirect()).open(req,timeout=30) as r:
+                      item['httpStatus']=r.status
+                      item['responseDate']=r.headers.get('Date')
+                      if r.status!=200 or r.geturl()!=url:raise ValueError('Unexpected public response')
+                      raw=r.read(4_000_001)
+                      if len(raw)>4_000_000:raise ValueError('Response exceeds safe bound')
+                  data=json.loads(raw)
+                  matches=list(objects(data))
+                  item['rawSha256']=hashlib.sha256(raw).hexdigest()
+                  item['topLevelType']=type(data).__name__
+                  item['packageNameCounts']=dict(Counter(p['name'] for p in matches))
+                  item['palladium']=[dict(fields=scalar_fields(p),fieldNames=sorted(p)) for p in matches if 'palladium' in p['name'].lower()]
+                  if name=='existing_public_relay' and isinstance(data,dict):
+                      item['relayHealth']={k:data.get(k) for k in ('status','ok','checked_at','relay_version','upstream_status','valid_package_count','warning_package_count')}
+              except urllib.error.HTTPError as e:
+                  item.update(errorType='HTTPError',httpStatus=e.code)
+                  if e.code in (401,403,429):break
+              except Exception as e:item['errorType']=type(e).__name__
+          out=Path('/tmp/palladium-availability.json')
+          out.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n')
+          print(out.read_text())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: palladium-availability-${{ github.run_id }}
+          path: /tmp/palladium-availability.json
+          retention-days: 7
+          if-no-files-found: error
