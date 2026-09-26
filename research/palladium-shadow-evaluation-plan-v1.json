@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "PALLADIUM_SHADOW_EVALUATION_V1",
+  "registrationContext": "Registered after the trial began and after inspecting its first 68 persisted attempts, before the scheduled 72-hour endpoint. Not a pre-trial preregistration.",
+  "expectedProtocolHash": "1fcd3fcd9c45a45a86b781e7423b46a1702cc0d9c1a951beae9947af1993f3a3",
+  "methods": {
+    "replay": "Replay each archived attempt against its exact publicSnapshotHash using the unchanged experiment code; require exact row and final-state equality.",
+    "coverage": "Report occupied fixed 60-second slots since trial activation, considering only completed slots by the explicit evaluation cutoff. Also report gaps and unobserved tails. Slot occupancy is not continuous uptime or seconds of availability.",
+    "offerUsability": "Report VALID distinct accepted observations separately from invalid, missing/duplicate-package, stale/input-error and repeated-source observations. Do not equate an omitted package with confirmed available:false.",
+    "streaks": "A usable streak requires same-series quotes with both source and receipt gaps satisfying the already-frozen trial rule. Report observation counts and endpoint spans, not a proven continuous condition.",
+    "episodes": "Use the exact replayed candidate and three-observation confirmation labels. Include every candidate, interruptions, unconfirmed episodes and right-censoring; no winner-only selection.",
+    "latency": "Report time from observations to the collector's batch report generation where known. This is not Git publication time, push delivery, execution latency or proof of tradeability.",
+    "decision": "While the trial clock is running, all results are interim. After expiry, report coverage limitations and recorded events without automatic promotion, threshold adjustment or profit inference. No new arbitrary minimum-event or profitability gate is introduced."
+  },
+  "fixedMetricUnits": {"time": "seconds", "slots": 60, "dateGrouping": "Europe/Ljubljana", "return": "conditional modeled reward divided by cost, not realized profit"},
+  "changesTrial": false,
+  "canRaiseSignal": false,
+  "canSendNotifications": false,
+  "automaticPurchase": false,
+  "canEstimateHitRate": false,
+  "verifiedProfit": null
+}
