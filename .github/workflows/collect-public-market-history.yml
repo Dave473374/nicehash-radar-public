@@ -12,6 +12,7 @@ on:
       - 'tests/test_scrypt_market_enrichment.py'
       - 'scripts/palladium_shadow_trial.py'
       - 'tests/test_palladium_shadow_trial.py'
+      - 'tests/test_palladium_shadow_contracts.py'
       - 'research/palladium-shadow-protocol-v1.json'
       - '.github/workflows/collect-public-market-history.yml'
   pull_request:
@@ -21,6 +22,7 @@ on:
       - 'tests/test_scrypt_market_enrichment.py'
       - 'scripts/palladium_shadow_trial.py'
       - 'tests/test_palladium_shadow_trial.py'
+      - 'tests/test_palladium_shadow_contracts.py'
       - 'research/palladium-shadow-protocol-v1.json'
       - '.github/workflows/collect-public-market-history.yml'
 
@@ -44,7 +46,7 @@ jobs:
           python-version: '3.12'
       - name: Offline economics, forward-only state and archive tests
         run: |
-          python3 -m unittest tests.test_scrypt_market_enrichment tests.test_palladium_shadow_trial tests.test_radar_snapshot_archive -v
+          python3 -m unittest tests.test_scrypt_market_enrichment tests.test_palladium_shadow_trial tests.test_palladium_shadow_contracts tests.test_radar_snapshot_archive -v
           python3 scripts/check_forbidden_admin_access.py
           python3 scripts/check_private_api_policy.py
           python3 scripts/test_phase0_correctness.py
@@ -61,6 +63,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Inspect only public package names, currency and availability
+        run: |
+          python3 - <<'PY'
+          import json,os,sys
+          from collections import Counter
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          from sample_public_market_burst import relay_feed
+          f=relay_feed()
+          packages=f.get('packages')
+          if not isinstance(packages,list):raise ValueError('Public package list missing')
+          inventory=[{k:p.get(k) for k in ('name','currency_market','available')} for p in packages if isinstance(p,dict)]
+          counts=Counter(p.get('name') for p in inventory)
+          r={'source':'EXISTING_PUBLIC_RELAY','checkedAt':f.get('checked_at'),'relayVersion':f.get('relay_version'),
+             'feedStatus':f.get('status'),'packageCount':len(inventory),'packages':inventory,
+             'palladiumNameCounts':{name:counts[name] for name in ('Palladium S','Palladium M')}}
+          out=Path(os.environ['RUNNER_TEMP'])/'palladium-shadow-smoke'
+          out.mkdir(parents=True,exist_ok=True)
+          (out/'public-package-inventory.json').write_text(json.dumps(r,indent=2)+'\n')
+          print('EXACT PUBLIC PACKAGE INVENTORY:',json.dumps(r))
+          PY
       - name: Three real minute-spaced public samples, explicitly excluded from the trial
         run: |
           python3 scripts/palladium_shadow_trial.py collect --smoke --samples 3 --output-dir "$RUNNER_TEMP/palladium-shadow-smoke"
@@ -73,6 +96,7 @@ jobs:
           assert r['canRaiseSignal'] is False and r['canSendNotifications'] is False
           assert r['lastBatch']['collected']==3, 'Public smoke incomplete; no production activation'
           print('REAL PUBLIC SMOKE:',json.dumps(r['packages']))
+          assert all(r['packages'][name]['validSamples']>=2 for name in ('Palladium S','Palladium M')), 'HTTP success is not usable Palladium data; activation not verified'
           PY
       - uses: actions/upload-artifact@v4
         if: always()
