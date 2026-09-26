@@ -7,7 +7,8 @@
     "Rows are reward/block observations, not unique-order outcomes.",
     "Same-minute LTC and DOGE rows are consistent with merged-mining reward pairing but do not by themselves identify one unique winning order.",
     "Consecutive DOGE Palladium M rows cannot establish whether one long-running order or multiple orders produced them.",
-    "Do not use this manual evidence as a MISS denominator or causal BUY-signal validation."
+    "Do not use this manual evidence as a MISS denominator or causal BUY-signal validation.",
+    "For single-chain Silver/BCH too, multiple Recent Blocks reward rows must not be assumed to equal the same number of unique winning orders."
   ],
   "visibleRows": [
     {
@@ -121,6 +122,69 @@
       "amount": 6.06400691,
       "localTime": "2026-09-25T09:05:00+02:00",
       "blockHeight": 3183987
+    },
+    {
+      "package": "Silver S",
+      "coin": "BCH",
+      "amount": 3.03131139,
+      "localTime": "2026-09-26T12:47:00+02:00",
+      "blockHeight": 970313
+    },
+    {
+      "package": "Silver S",
+      "coin": "BCH",
+      "amount": 3.03174707,
+      "localTime": "2026-09-26T12:00:00+02:00",
+      "blockHeight": 970308
+    },
+    {
+      "package": "Silver 50",
+      "coin": "BCH",
+      "amount": 3.03145417,
+      "localTime": "2026-09-26T11:39:00+02:00",
+      "blockHeight": 970304
+    },
+    {
+      "package": "Silver M",
+      "coin": "BCH",
+      "amount": 3.03231205,
+      "localTime": "2026-09-26T07:46:00+02:00",
+      "blockHeight": 970276
+    },
+    {
+      "package": "Silver L",
+      "coin": "BCH",
+      "amount": 3.03173841,
+      "localTime": "2026-09-26T06:04:00+02:00",
+      "blockHeight": 970258
+    },
+    {
+      "package": "Silver S",
+      "coin": "BCH",
+      "amount": 3.03161927,
+      "localTime": "2026-09-25T21:00:00+02:00",
+      "blockHeight": 970188
+    },
+    {
+      "package": "Silver S",
+      "coin": "BCH",
+      "amount": 3.03418974,
+      "localTime": "2026-09-25T19:31:00+02:00",
+      "blockHeight": 970174
+    },
+    {
+      "package": "Silver S",
+      "coin": "BCH",
+      "amount": 3.03399242,
+      "localTime": "2026-09-24T23:15:00+02:00",
+      "blockHeight": 970057
+    },
+    {
+      "package": "Team Silver",
+      "coin": "BCH",
+      "amount": 3.03432224,
+      "localTime": "2026-09-24T20:49:00+02:00",
+      "blockHeight": 970042
     }
   ],
   "sameMinutePairs": [
@@ -141,6 +205,14 @@
       "localTime": "2026-09-26T09:08:00+02:00",
       "ltcBlock": 3184548,
       "dogeBlock": 6389988
+    }
+  ],
+  "observations": [
+    {
+      "kind": "SILVER_S_REWARD_CLUSTER",
+      "observedFromUserScreenshotAtLocal": "2026-09-26T14:15:00+02:00",
+      "details": "Two Silver S BCH reward rows are visible on 2026-09-26 at 12:00 and 12:47 (blocks 970308 and 970313), plus additional Silver S rows on 25 Sep 19:31/21:00 and 24 Sep 23:15.",
+      "interpretation": "Useful evidence that repeated Recent Blocks rows can cluster within a short interval. This does not establish the number of unique completed orders; one order can in principle have multiple reward records, so order-level HIT rate still requires order identifiers/outcomes."
     }
   ]
 }
