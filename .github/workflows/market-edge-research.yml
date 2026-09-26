@@ -26,10 +26,12 @@ on:
       - docs/verified-hit-market-context.md
       - scripts/build_palladium_hit_control_comparison.py
       - tests/test_market_palladium_hit_controls.py
-      - scripts/build_palladium_m_day_comparison.py
-      - tests/test_palladium_m_day_comparison.py
       - scripts/palladium_m_intraday.py
       - tests/test_palladium_m_intraday.py
+      - scripts/palladium_quote_repetition.py
+      - tests/test_palladium_quote_repetition.py
+      - scripts/sample_public_market_burst.py
+      - tests/test_public_market_burst.py
       - docs/palladium-hit-controls.md
       - research/onchain-hit-verification.jsonl
       - docs/alert-latency-policy.md
@@ -58,10 +60,12 @@ on:
       - docs/verified-hit-market-context.md
       - scripts/build_palladium_hit_control_comparison.py
       - tests/test_market_palladium_hit_controls.py
-      - scripts/build_palladium_m_day_comparison.py
-      - tests/test_palladium_m_day_comparison.py
       - scripts/palladium_m_intraday.py
       - tests/test_palladium_m_intraday.py
+      - scripts/palladium_quote_repetition.py
+      - tests/test_palladium_quote_repetition.py
+      - scripts/sample_public_market_burst.py
+      - tests/test_public_market_burst.py
       - docs/palladium-hit-controls.md
       - research/onchain-hit-verification.jsonl
       - docs/alert-latency-policy.md
@@ -95,8 +99,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_market*.py' -v
           python3 -m unittest tests.test_verified_hit_market_context -v
-          python3 -m unittest tests.test_palladium_m_day_comparison -v
-          python3 -m unittest tests.test_palladium_m_intraday -v
+          python3 -m unittest tests.test_palladium_m_intraday tests.test_palladium_quote_repetition tests.test_public_market_burst -v
           python3 scripts/test_phase0_correctness.py
       - name: Analyze existing public files only
         run: |
@@ -118,9 +121,6 @@ jobs:
             --hits /tmp/verified-hit-market-context.jsonl \
             --pairs /tmp/market-edge-pairs.jsonl \
             --output /tmp/palladium-hit-control-report.json
-          python3 scripts/build_palladium_m_day_comparison.py \
-            --pairs /tmp/market-edge-pairs.jsonl \
-            --output /tmp/palladium-m-day-comparison.json
       - uses: actions/upload-artifact@v4
         with:
           name: market-edge-research-${{ github.run_id }}
@@ -135,7 +135,6 @@ jobs:
             /tmp/verified-hit-market-context.jsonl
             /tmp/verified-hit-market-context-report.json
             /tmp/palladium-hit-control-report.json
-            /tmp/palladium-m-day-comparison.json
           retention-days: 7
           if-no-files-found: error
 
@@ -163,8 +162,7 @@ jobs:
           python3 scripts/check_private_api_policy.py
           python3 -m unittest discover -s tests -p 'test_market*.py'
           python3 -m unittest tests.test_verified_hit_market_context
-          python3 -m unittest tests.test_palladium_m_day_comparison
-          python3 -m unittest tests.test_palladium_m_intraday
+          python3 -m unittest tests.test_palladium_m_intraday tests.test_palladium_quote_repetition tests.test_public_market_burst
       - name: Build report without changing source feeds
         run: |
           python3 scripts/build_market_edge_research.py
@@ -173,18 +171,15 @@ jobs:
           python3 scripts/build_alert_latency_report.py
           python3 scripts/build_verified_hit_market_context.py
           python3 scripts/build_palladium_hit_control_comparison.py
-          python3 scripts/build_palladium_m_day_comparison.py
       - name: Persist only public research outputs
         run: |
           git config user.name 'NiceHash Radar Bot'
           git config user.email 'actions@github.com'
-          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-controls.jsonl research/lag-report.json research/alert-latency-report.json research/verified-hit-market-context.jsonl research/verified-hit-market-context-report.json research/palladium-hit-control-report.json research/palladium-m-day-comparison.json
+          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-controls.jsonl research/lag-report.json research/alert-latency-report.json research/verified-hit-market-context.jsonl research/verified-hit-market-context-report.json research/palladium-hit-control-report.json
           git diff --cached --quiet && exit 0
           git commit -m 'Update public market research (no decision changes)'
           for attempt in 1 2 3; do
-            if git push origin HEAD:main; then
-              exit 0
-            fi
+            if git push origin HEAD:main; then exit 0; fi
             git fetch origin main
             if ! git rebase origin/main; then
               git rebase --abort || true
@@ -211,23 +206,27 @@ jobs:
         run: |
           python3 scripts/check_forbidden_admin_access.py
           python3 scripts/check_private_api_policy.py
-          python3 -m unittest tests.test_palladium_m_intraday -v
-      - name: Inspect every reachable public feed revision in requested calendar windows
-        run: python3 scripts/palladium_m_intraday.py > /tmp/palladium-m-intraday.log
-      - name: Print audit summary
+          python3 -m unittest tests.test_palladium_m_intraday tests.test_palladium_quote_repetition -v
+      - name: Inspect complete public Git windows and test fixed repetition screen
+        run: |
+          python3 - <<'PY'
+          from datetime import date, timedelta
+          import subprocess
+          days=[str(date(2026,9,5)+timedelta(days=n)) for n in range(21)]
+          with open('/tmp/palladium-m-intraday.log','w') as log:
+              subprocess.run(['python3','scripts/palladium_m_intraday.py','--dates',*days],stdout=log,check=True)
+          PY
+          python3 scripts/palladium_quote_repetition.py
+      - name: Print archive coverage
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
-          r = json.loads(Path('/tmp/palladium-m-intraday-report.json').read_text())
-          for d in r['days']:
-              print('DAY', json.dumps(d))
-          print('COUNTS', json.dumps(r['counts']))
-          for key in ('quoteCount','eligibleWindowsByHorizon','screen15mWindows','episodesWith60mSpacing','episodesBothModelsAbove100','episodesBothAbove100AndMathPass','forwardQuoteDiagnostics','windowSummaries','gitHead','candidateManifestSha256'):
-              print(key, json.dumps(r[key]))
-          for episode in r['episodes']:
-              print('EPISODE', json.dumps(episode))
-          print('CURRENT unchanged; NO_VERIFIED_EDGE; retrospective public quotes only')
+          r=json.loads(Path('/tmp/palladium-m-intraday-report.json').read_text())
+          print('FULL HISTORY COUNTS',json.dumps(r['counts']))
+          print('GIT HEAD',r['gitHead'])
+          print('MANIFEST',r['candidateManifestSha256'])
+          print('TOTAL TARGET-DAY QUOTES',r['quoteCount'])
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -235,5 +234,37 @@ jobs:
           path: |
             /tmp/palladium-m-intraday-report.json
             /tmp/palladium-m-git-quotes.jsonl
+            /tmp/palladium-m-repetition-report.json
           retention-days: 30
           if-no-files-found: error
+
+  minute-cadence-diagnostic:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    concurrency:
+      group: public-market-minute-cadence-diagnostic
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check public-only policy and offline sampling tests
+        run: |
+          python3 scripts/check_forbidden_admin_access.py
+          python3 scripts/check_private_api_policy.py
+          python3 -m unittest tests.test_public_market_burst -v
+      - name: Six bounded public samples at one-minute intervals (no cron or writes)
+        run: python3 scripts/sample_public_market_burst.py --samples 6 --interval 60
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-market-minute-burst-${{ github.run_id }}
+          path: /tmp/public-market-burst/
+          retention-days: 30
+          if-no-files-found: warn
