@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "role": "PALLADIUM_SHADOW_OPERATIONS_SAFETY",
+  "recordedAt": "2026-09-26T12:37:00Z",
+  "trigger": "User received Cloudflare notification that Workers KV free-tier daily operations reached 50%.",
+  "action": "Keep the frozen 60-second sampling cadence inside each burst, but start a new burst only when the last persisted receipt is at least 3000 seconds old. Scheduled bursts use 11 samples (~10 minutes); push-triggered due bursts use at most 6 samples.",
+  "expectedEffect": "Reduce relay/KV request rate during the active shadow trial by roughly 80% versus near-continuous minute sampling, while preserving v1's 30-90 second consecutive-sample definition inside each observed burst.",
+  "trialProtocolChanged": false,
+  "buyLogicChanged": false,
+  "candidateThresholdsChanged": false,
+  "automaticPurchase": false,
+  "limitations": [
+    "Cloudflare KV operations per relay request were not independently measured, so the exact percentage reduction in KV operations is not proven.",
+    "Coverage becomes intentionally sparse between bursts; those gaps remain unobserved and reset candidate baselines.",
+    "The normal post-trial collector remains on its existing schedule because the throttle only applies while phase=trial."
+  ]
+}
