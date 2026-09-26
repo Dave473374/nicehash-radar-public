@@ -1,0 +1,54 @@
+name: Radar Archive Integrity
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/radar-archive-integrity.yml'
+      - '.github/workflows/collect-calibration.yml'
+      - 'scripts/*.py'
+      - 'tests/*archive*.py'
+      - 'docs/radar-snapshot-archive.md'
+  pull_request:
+    paths:
+      - '.github/workflows/radar-archive-integrity.yml'
+      - '.github/workflows/collect-calibration.yml'
+      - 'scripts/*.py'
+      - 'tests/*archive*.py'
+      - 'docs/radar-snapshot-archive.md'
+      - 'calibration/radar-snapshots/**'
+      - 'calibration/radar-snapshots.jsonl'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: radar-archive-integrity-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: All offline regression tests and existing source policies
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 scripts/test_phase0_correctness.py
+          python3 scripts/check_forbidden_admin_access.py
+          python3 scripts/check_private_api_policy.py
+      - name: Verify real logical bytes and existing consumer outputs before and after
+        run: python3 scripts/verify_radar_archive_migration.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radar-archive-integrity-${{ github.run_id }}
+          path: /tmp/radar-archive-migration-verification.json
+          retention-days: 30
+          if-no-files-found: error

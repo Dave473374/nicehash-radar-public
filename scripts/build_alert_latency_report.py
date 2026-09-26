@@ -3,6 +3,10 @@
 Public/local files only. This report never changes CURRENT, BUY signals, or orders.
 """
 from __future__ import annotations
+try:
+    from radar_snapshot_archive import history_exists, read_history_text
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import history_exists, read_history_text
 import argparse
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -82,9 +86,9 @@ def load_snapshots(path, now):
     counts = Counter()
     by_time = {}
     conflicts = set()
-    if not path.exists():
+    if not history_exists(path):
         return [], counts
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    for raw in read_history_text(path, encoding="utf-8").splitlines():
         if not raw.strip():
             continue
         try:

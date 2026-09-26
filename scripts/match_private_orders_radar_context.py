@@ -6,6 +6,10 @@ results stay in /tmp and never change BUY logic.
 """
 from __future__ import annotations
 
+try:
+    from radar_snapshot_archive import history_exists, read_history_text
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import history_exists, read_history_text
 import argparse
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -414,14 +418,14 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
     for path in (args.orders, args.radar):
-        if not path.exists():
+        if not history_exists(path):
             parser.error(f"Missing input: {path}")
     if args.output.resolve() in {args.orders.resolve(), args.radar.resolve()}:
         parser.error("Output must be distinct from inputs")
     order_doc = json.loads(args.orders.read_text(encoding="utf-8"))
     snapshots = [
         json.loads(line)
-        for line in args.radar.read_text(encoding="utf-8").splitlines()
+        for line in read_history_text(args.radar, encoding="utf-8").splitlines()
         if line.strip()
     ]
     result = build(order_doc, snapshots)

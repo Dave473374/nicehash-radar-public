@@ -1,3 +1,7 @@
+try:
+    from radar_snapshot_archive import history_exists, read_history_text
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import history_exists, read_history_text
 import hashlib
 import json
 import os
@@ -75,14 +79,12 @@ def load_orders():
 
 
 def load_snapshots():
-    if not RADAR_HISTORY.exists():
+    if not history_exists(RADAR_HISTORY):
         return []
 
     rows = []
 
-    for line in RADAR_HISTORY.read_text(
-        encoding="utf-8"
-    ).splitlines():
+    for line in read_history_text(RADAR_HISTORY, encoding="utf-8").splitlines():
         if not line.strip():
             continue
 

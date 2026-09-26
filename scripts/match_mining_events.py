@@ -1,3 +1,7 @@
+try:
+    from radar_snapshot_archive import open_history
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import open_history
 import json
 import math
 from bisect import bisect_left, bisect_right
@@ -48,7 +52,7 @@ def event_time(event):
 
 snapshots = [
     json.loads(line)
-    for line in open(SNAPSHOTS_FILE, encoding="utf-8")
+    for line in open_history(SNAPSHOTS_FILE, encoding="utf-8")
     if line.strip()
 ]
 

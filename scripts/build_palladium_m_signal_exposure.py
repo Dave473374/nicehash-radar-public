@@ -10,6 +10,10 @@ flagged and should not be used as primary performance evidence.
 """
 from __future__ import annotations
 
+try:
+    from radar_snapshot_archive import read_history_text
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import read_history_text
 import argparse
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -84,7 +88,7 @@ def snapshot_point(snapshot):
 
 def load_points(path):
     points = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in read_history_text(path, encoding="utf-8").splitlines():
         if not line.strip():
             continue
         try:
