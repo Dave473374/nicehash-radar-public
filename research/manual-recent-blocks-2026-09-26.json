@@ -8,7 +8,8 @@
     "Same-minute LTC and DOGE rows are consistent with merged-mining reward pairing but do not by themselves identify one unique winning order.",
     "Consecutive DOGE Palladium M rows cannot establish whether one long-running order or multiple orders produced them.",
     "Do not use this manual evidence as a MISS denominator or causal BUY-signal validation.",
-    "For single-chain Silver/BCH too, multiple Recent Blocks reward rows must not be assumed to equal the same number of unique winning orders."
+    "For single-chain Silver/BCH too, multiple Recent Blocks reward rows must not be assumed to equal the same number of unique winning orders.",
+    "For Bronze/ZEC, repeated reward rows close in time can come from one or multiple orders; do not infer unique-order HIT counts from Recent Blocks alone."
   ],
   "visibleRows": [
     {
@@ -185,6 +186,69 @@
       "amount": 3.03432224,
       "localTime": "2026-09-24T20:49:00+02:00",
       "blockHeight": 970042
+    },
+    {
+      "package": "Bronze M",
+      "coin": "ZEC",
+      "amount": 1.21374191,
+      "localTime": "2026-09-26T07:25:00+02:00",
+      "blockHeight": 3496518
+    },
+    {
+      "package": "Bronze L",
+      "coin": "ZEC",
+      "amount": 1.21259701,
+      "localTime": "2026-09-25T20:07:00+02:00",
+      "blockHeight": 3495985
+    },
+    {
+      "package": "Bronze L",
+      "coin": "ZEC",
+      "amount": 1.21250001,
+      "localTime": "2026-09-25T18:08:00+02:00",
+      "blockHeight": 3495879
+    },
+    {
+      "package": "Bronze L",
+      "coin": "ZEC",
+      "amount": 1.21708973,
+      "localTime": "2026-09-25T17:44:00+02:00",
+      "blockHeight": 3495864
+    },
+    {
+      "package": "Bronze M",
+      "coin": "ZEC",
+      "amount": 1.21874584,
+      "localTime": "2026-09-25T17:31:00+02:00",
+      "blockHeight": 3495855
+    },
+    {
+      "package": "Bronze S",
+      "coin": "ZEC",
+      "amount": 1.21301217,
+      "localTime": "2026-09-25T06:50:00+02:00",
+      "blockHeight": 3495344
+    },
+    {
+      "package": "Bronze S",
+      "coin": "ZEC",
+      "amount": 1.21342151,
+      "localTime": "2026-09-24T21:28:00+02:00",
+      "blockHeight": 3494902
+    },
+    {
+      "package": "Team Bronze",
+      "coin": "ZEC",
+      "amount": 1.22432625,
+      "localTime": "2026-09-24T06:56:00+02:00",
+      "blockHeight": 3494212
+    },
+    {
+      "package": "Bronze L",
+      "coin": "ZEC",
+      "amount": 1.21349437,
+      "localTime": "2026-09-24T06:40:00+02:00",
+      "blockHeight": 3494194
     }
   ],
   "sameMinutePairs": [
@@ -213,6 +277,12 @@
       "observedFromUserScreenshotAtLocal": "2026-09-26T14:15:00+02:00",
       "details": "Two Silver S BCH reward rows are visible on 2026-09-26 at 12:00 and 12:47 (blocks 970308 and 970313), plus additional Silver S rows on 25 Sep 19:31/21:00 and 24 Sep 23:15.",
       "interpretation": "Useful evidence that repeated Recent Blocks rows can cluster within a short interval. This does not establish the number of unique completed orders; one order can in principle have multiple reward records, so order-level HIT rate still requires order identifiers/outcomes."
+    },
+    {
+      "kind": "BRONZE_ZEC_REWARD_CLUSTER",
+      "observedFromUserScreenshotAtLocal": "2026-09-26T14:16:00+02:00",
+      "details": "Visible ZEC rewards include Bronze M at 25 Sep 17:31 followed by Bronze L at 17:44, 18:08 and 20:07, plus Bronze S rewards on 24 Sep 21:28 and 25 Sep 06:50.",
+      "interpretation": "The 25 Sep cluster is useful for later quote/network context comparison, but the screenshot cannot determine whether repeated Bronze L reward rows came from one long-running order or multiple orders. Reward rows are not a unique-order denominator."
     }
   ]
 }
