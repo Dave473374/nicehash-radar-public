@@ -26,6 +26,8 @@ on:
       - docs/verified-hit-market-context.md
       - scripts/build_palladium_hit_control_comparison.py
       - tests/test_market_palladium_hit_controls.py
+      - scripts/build_palladium_m_day_comparison.py
+      - tests/test_palladium_m_day_comparison.py
       - docs/palladium-hit-controls.md
       - research/onchain-hit-verification.jsonl
       - docs/alert-latency-policy.md
@@ -87,6 +89,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_market*.py' -v
           python3 -m unittest tests.test_verified_hit_market_context -v
+          python3 -m unittest tests.test_palladium_m_day_comparison -v
           python3 scripts/test_phase0_correctness.py
       - name: Analyze existing public files only
         run: |
@@ -108,6 +111,9 @@ jobs:
             --hits /tmp/verified-hit-market-context.jsonl \
             --pairs /tmp/market-edge-pairs.jsonl \
             --output /tmp/palladium-hit-control-report.json
+          python3 scripts/build_palladium_m_day_comparison.py \
+            --pairs /tmp/market-edge-pairs.jsonl \
+            --output /tmp/palladium-m-day-comparison.json
       - uses: actions/upload-artifact@v4
         with:
           name: market-edge-research-${{ github.run_id }}
@@ -122,6 +128,7 @@ jobs:
             /tmp/verified-hit-market-context.jsonl
             /tmp/verified-hit-market-context-report.json
             /tmp/palladium-hit-control-report.json
+            /tmp/palladium-m-day-comparison.json
           retention-days: 7
           if-no-files-found: error
 
@@ -149,6 +156,7 @@ jobs:
           python3 scripts/check_private_api_policy.py
           python3 -m unittest discover -s tests -p 'test_market*.py'
           python3 -m unittest tests.test_verified_hit_market_context
+          python3 -m unittest tests.test_palladium_m_day_comparison
       - name: Build report without changing source feeds
         run: |
           python3 scripts/build_market_edge_research.py
@@ -157,11 +165,12 @@ jobs:
           python3 scripts/build_alert_latency_report.py
           python3 scripts/build_verified_hit_market_context.py
           python3 scripts/build_palladium_hit_control_comparison.py
+          python3 scripts/build_palladium_m_day_comparison.py
       - name: Persist only public research outputs
         run: |
           git config user.name 'NiceHash Radar Bot'
           git config user.email 'actions@github.com'
-          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-controls.jsonl research/lag-report.json research/alert-latency-report.json research/verified-hit-market-context.jsonl research/verified-hit-market-context-report.json research/palladium-hit-control-report.json
+          git add research/market-edge-report.json research/market-edge-pairs.jsonl research/input-diagnostics.json research/lag-episodes.jsonl research/lag-controls.jsonl research/lag-report.json research/alert-latency-report.json research/verified-hit-market-context.jsonl research/verified-hit-market-context-report.json research/palladium-hit-control-report.json research/palladium-m-day-comparison.json
           git diff --cached --quiet && exit 0
           git commit -m 'Update public market research (no decision changes)'
           for attempt in 1 2 3; do
