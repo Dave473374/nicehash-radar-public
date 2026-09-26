@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-22T14:34:53.969Z",
+  "generatedAt": "2026-09-26T09:15:00.000Z",
   "role": "BUY_RADAR_RESEARCH_SIGNAL_REGISTER",
   "purpose": "Persistent promotion ledger for research signals, infrastructure findings and data-quality blockers so promising evidence is not forgotten or silently promoted.",
   "statusOrder": [
@@ -412,6 +412,70 @@
         ]
       },
       "nextReviewWhen": "A complete Palladium M aggregate outcome month is available or direct order-level causal outcomes become available."
+    },
+    {
+      "id": "PALLADIUM_QUOTE_IMPROVEMENT_SHADOW_V1",
+      "title": "Palladium S/M minute quote-improvement forward shadow",
+      "category": "BUY_FEATURE",
+      "status": "TRACKING",
+      "canAffectBuySignal": false,
+      "productionEligible": false,
+      "hypothesis": "A >=10% increase in quoted work per BTC versus the immediately preceding valid minute quote, with both conditional return models >100% and both LTC/DOGE math checks PASS, may identify transient pre-entry quote improvements worth further validation. Palladium S is PRIMARY and M SECONDARY.",
+      "currentEvidenceSnapshot": {
+        "reviewedAt": "2026-09-26T09:07:44.579344Z",
+        "protocolLocked": true,
+        "trialStart": "2026-09-26T07:45:58.961546Z",
+        "trialExpiry": "2026-09-29T07:45:58.961546Z",
+        "persistedAttempts": 68,
+        "usableObservationsPerPackage": 38,
+        "unusableObservationsPerPackage": 30,
+        "candidateCountS": 0,
+        "candidateCountM": 0,
+        "repeatConfirmedS": 0,
+        "repeatConfirmedM": 0,
+        "evaluatorStatus": "INTERIM_TRIAL_RUNNING",
+        "verdict": "NO_VERIFIED_EDGE"
+      },
+      "linkedEvidence": [
+        "research/palladium-shadow-protocol-v1.json",
+        "research/palladium-shadow-state.json",
+        "research/palladium-shadow-report.json",
+        "research/palladium-shadow-evaluation-plan-v1.json",
+        "research/palladium-shadow-evaluation.json",
+        "research/palladium-shadow-evaluation.md",
+        "calibration/palladium-shadow-history/manifest.json",
+        "docs/palladium-shadow-trial-v1.md",
+        "docs/palladium-shadow-evaluation-v1.md"
+      ],
+      "blockingIssues": [
+        "The 72-hour forward trial has not completed.",
+        "Exact per-minute upstream available=true/false history is not continuously archived; missing packages must remain ambiguous.",
+        "Usable observations frequently have LTC/DOGE math WARNING or CRITICAL states, so usable input is not equivalent to a qualifying candidate.",
+        "Conditional model returns are not realized ticket ROI, delivered work or HIT/MISS outcomes.",
+        "GitHub Actions batching does not prove uninterrupted one-minute coverage or phone-delivery latency."
+      ],
+      "reviewTriggers": [
+        "The fixed trial clock reaches 2026-09-29T07:45:58.961546Z and the final evaluator report is available.",
+        "A first repeatConfirmed three-observation event is recorded for Palladium S or M.",
+        "The trial is suspended, loses evidence integrity, or shows material coverage degradation.",
+        "A future authorized order-level test becomes available to compare a pre-entry shadow event with actual execution/outcome without changing the frozen rule."
+      ],
+      "promotionCriteria": {
+        "toCandidate": [
+          "The frozen forward trial produces repeat-confirmed events with adequate observed coverage and no evidence-integrity failure.",
+          "Event interpretation remains unchanged after reviewing all invalid, interrupted and noncandidate observations."
+        ],
+        "toValidated": [
+          "A new held-out or separately registered forward period reproduces the effect without threshold refitting.",
+          "Authorized order-level execution/outcome evidence supports incremental value beyond the existing production baseline.",
+          "Math/input-provenance blockers and fee/delivered-work ambiguity are resolved enough for the intended claim."
+        ],
+        "toProductionEligible": [
+          "A shadow comparison against the frozen production baseline shows incremental value without worsening safety, calibration or alert quality.",
+          "A dedicated production PR, rollback plan and explicit human approval are completed."
+        ]
+      },
+      "nextReviewWhen": "At trial expiry/final evaluator review, on the first repeat-confirmed event, or immediately on evidence-integrity/coverage failure."
     }
   ]
 }
