@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "PALLADIUM_QUOTE_IMPROVEMENT_SHADOW_V1",
+  "lockedAt": "2026-09-26T07:20:00Z",
+  "role": "FORWARD_ONLY_DEVELOPMENT_INTEGRATION_TRIAL_NOT_TRADING_VALIDATION",
+  "packages": {"Palladium S": "PRIMARY", "Palladium M": "SECONDARY"},
+  "rules": {
+    "trialHours": 72,
+    "intervalSeconds": 60,
+    "batchSamples": 31,
+    "minConsecutiveGapSeconds": 30,
+    "maxConsecutiveGapSeconds": 90,
+    "maxQuoteAndFxAgeSeconds": 120,
+    "workRiseMinPercent": 10.0,
+    "conditionalReturnMustExceedPercent": 100.0,
+    "requireBothChainMathPass": true,
+    "additionalConfirmationSamples": 2,
+    "confirmationWorkFraction": 0.95,
+    "cooldownSeconds": 3600
+  },
+  "baseline": "Immediately preceding distinct valid quote for the same package, version, cost, duration, reward basis and model code; both receipt and source-time gaps must be 30-90 seconds. Gaps reset the baseline.",
+  "confirmation": "Two additional distinct consecutive minute observations after the initial candidate (three total), each satisfying both conditional-return gates and both math checks, with at least 95% of the entry work per BTC. A duplicate, missing or invalid sample interrupts confirmation.",
+  "activation": "First persisted main-branch trial batch; PR smoke samples are explicitly excluded. Ends automatically 72 hours after its first attempt, without extending on restart.",
+  "cadence": "60 seconds within bounded GitHub Actions batches. Inter-batch and scheduling gaps are measured, never hidden or interpolated. This is not a continuous-runtime guarantee.",
+  "publicMarketLagProtocolChanged": false,
+  "currentProductionModelChanged": false,
+  "canRaiseSignal": false,
+  "canSendNotifications": false,
+  "automaticPurchase": false,
+  "verifiedNetReturnPercent": null,
+  "limitations": [
+    "The pattern was selected using prior data; only new live samples after activation enter this trial.",
+    "The minute-to-minute baseline is intentionally stricter than the earlier sparse retrospective <=20-minute comparison; event rates are not directly comparable.",
+    "Two models share reported inputs. Math PASS is consistency, not independent source verification.",
+    "Fees, component-level source freshness, executable quotes, delivered work, persistence during the full ticket, and mining outcomes remain unverified.",
+    "Repeated observations do not establish continuous conditions or independent mining trials. A confirmation is not a BUY recommendation.",
+    "Development trial only: after 72 hours the existing single-snapshot collector resumes. A permanent minute service requires a suitable runtime and measured coverage."
+  ]
+}
