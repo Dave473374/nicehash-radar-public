@@ -1,3 +1,7 @@
+try:
+    from radar_snapshot_archive import history_exists, read_history_text
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import history_exists, read_history_text
 import argparse
 import json
 from datetime import datetime
@@ -57,16 +61,14 @@ end = parse_ts(args.end)
 if start is None or end is None or end <= start:
     raise SystemExit("Invalid --start/--end UTC window")
 
-if not RADAR_HISTORY.exists():
+if not history_exists(RADAR_HISTORY):
     raise SystemExit(
         f"Radar history missing: {RADAR_HISTORY}"
     )
 
 snapshots = []
 
-for line in RADAR_HISTORY.read_text(
-    encoding="utf-8"
-).splitlines():
+for line in read_history_text(RADAR_HISTORY, encoding="utf-8").splitlines():
     if not line.strip():
         continue
 

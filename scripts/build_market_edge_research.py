@@ -1,6 +1,10 @@
 """Offline, public-file-only pricing-lag research. Never produces a BUY signal."""
 from __future__ import annotations
 
+try:
+    from radar_snapshot_archive import open_history
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import open_history
 import argparse
 from bisect import bisect_right
 from collections import Counter, defaultdict
@@ -46,7 +50,7 @@ def iso(dt: datetime) -> str:
 
 
 def json_lines(path: Path, counts: Counter):
-    with path.open(encoding='utf-8') as handle:
+    with open_history(path, encoding='utf-8') as handle:
         for line in handle:
             if not line.strip():
                 continue
@@ -61,7 +65,7 @@ def json_lines(path: Path, counts: Counter):
 
 
 def digest(path: Path) -> str:
-    with path.open('rb') as handle:
+    with open_history(path, 'rb') as handle:
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
 

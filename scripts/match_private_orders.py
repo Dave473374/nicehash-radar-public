@@ -1,3 +1,7 @@
+try:
+    from radar_snapshot_archive import read_history_text
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import read_history_text
 import json
 import math
 import os
@@ -179,7 +183,7 @@ orders = json.loads(
 
 snapshots = [
     json.loads(line)
-    for line in RADAR_HISTORY.read_text(encoding="utf-8").splitlines()
+    for line in read_history_text(RADAR_HISTORY, encoding="utf-8").splitlines()
     if line.strip()
 ]
 

@@ -1,3 +1,7 @@
+try:
+    from radar_snapshot_archive import open_history
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import open_history
 import json
 from datetime import datetime
 
@@ -5,7 +9,7 @@ SNAPSHOTS_FILE = "calibration/radar-snapshots.jsonl"
 BLOCKS_FILE = "calibration/realized-blocks.jsonl"
 OUTPUT_FILE = "calibration/radar-block-matches.jsonl"
 
-snapshots = [json.loads(x) for x in open(SNAPSHOTS_FILE, encoding="utf-8") if x.strip()]
+snapshots = [json.loads(x) for x in open_history(SNAPSHOTS_FILE, encoding="utf-8") if x.strip()]
 blocks = [json.loads(x) for x in open(BLOCKS_FILE, encoding="utf-8") if x.strip()]
 
 parse_time = lambda x: datetime.fromisoformat(x.replace("Z", "+00:00"))

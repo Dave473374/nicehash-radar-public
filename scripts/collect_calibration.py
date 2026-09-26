@@ -1,3 +1,7 @@
+try:
+    from radar_snapshot_archive import history_exists, read_history_text, append_history, history_digest
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import history_exists, read_history_text, append_history, history_digest
 import hashlib
 import json
 import os
@@ -59,10 +63,10 @@ def canonical_feed_sha256(feed):
 def existing_feed_hashes():
     hashes = set()
 
-    if not OUTPUT_FILE.exists():
+    if not history_exists(OUTPUT_FILE):
         return hashes
 
-    for line in OUTPUT_FILE.read_text(encoding="utf-8").splitlines():
+    for line in read_history_text(OUTPUT_FILE, encoding="utf-8").splitlines():
         if not line.strip():
             continue
 
@@ -87,6 +91,7 @@ feed = json.loads(SOURCE_FILE.read_text(encoding="utf-8"))
 collected_at = datetime.now(timezone.utc)
 feed_hash = canonical_feed_sha256(feed)
 
+base_history_sha = history_digest(OUTPUT_FILE) if history_exists(OUTPUT_FILE) else None
 if feed_hash in existing_feed_hashes():
     print("Calibration snapshot already present for current feed")
     print("Relay version:", feed.get("relay_version"))
@@ -105,18 +110,7 @@ snapshot = {
     "feed": feed,
 }
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-with OUTPUT_FILE.open("a", encoding="utf-8") as handle:
-    handle.write(
-        json.dumps(
-            snapshot,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        )
-        + "\n"
-    )
+append_history(OUTPUT_FILE, [snapshot], expected_sha256=base_history_sha)
 
 print("Calibration snapshot created successfully")
 print("Relay version:", feed.get("relay_version"))

@@ -1,3 +1,7 @@
+try:
+    from radar_snapshot_archive import history_exists, read_history_text, append_history, history_digest
+except ModuleNotFoundError:  # Also support package/spec imports from repository root.
+    from scripts.radar_snapshot_archive import history_exists, read_history_text, append_history, history_digest
 import hashlib
 import json
 import subprocess
@@ -51,10 +55,10 @@ def load_existing():
     feed_hashes = set()
     latest = None
 
-    if not OUTPUT_FILE.exists():
+    if not history_exists(OUTPUT_FILE):
         return commits, feed_hashes, latest
 
-    for line in OUTPUT_FILE.read_text(encoding="utf-8").splitlines():
+    for line in read_history_text(OUTPUT_FILE, encoding="utf-8").splitlines():
         if not line.strip():
             continue
 
@@ -124,6 +128,7 @@ def load_feed_from_commit(sha):
     return json.loads(result.stdout)
 
 
+base_history_sha = history_digest(OUTPUT_FILE) if history_exists(OUTPUT_FILE) else None
 known_commits, known_feed_hashes, latest_existing = load_existing()
 candidates = git_log_since(latest_existing)
 
@@ -181,18 +186,7 @@ for sha, committed_at in candidates:
     relay_versions[version] = relay_versions.get(version, 0) + 1
 
 if added:
-    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    with OUTPUT_FILE.open("a", encoding="utf-8") as handle:
-        for snapshot in added:
-            handle.write(
-                json.dumps(
-                    snapshot,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
+    append_history(OUTPUT_FILE, added, expected_sha256=base_history_sha)
 
 print("RADAR SNAPSHOT BACKFILL")
 print("Latest existing snapshot:", latest_existing.isoformat() if latest_existing else "NONE")
