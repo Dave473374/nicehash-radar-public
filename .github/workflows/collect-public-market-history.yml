@@ -124,12 +124,36 @@ jobs:
       - name: Determine finite trial phase without resetting activation
         id: phase
         run: python3 scripts/palladium_shadow_trial.py plan
-      - name: Collect minute-spaced trial batch through the existing public sampler
+      - name: Apply KV safety throttle without changing the frozen 60-second protocol
+        id: throttle
         if: steps.phase.outputs.mode == 'trial'
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          report = Path('research/palladium-shadow-report.json')
+          collect = True
+          reason = 'NO_PRIOR_REPORT'
+          if report.exists():
+              r = json.loads(report.read_text())
+              last = r.get('lastReceiptAt')
+              if last:
+                  at = datetime.fromisoformat(last.replace('Z','+00:00')).astimezone(timezone.utc)
+                  age = (datetime.now(timezone.utc) - at).total_seconds()
+                  collect = age >= 3000
+                  reason = f'LAST_RECEIPT_AGE_SECONDS={age:.1f}'
+          with open(os.environ['GITHUB_OUTPUT'],'a') as h:
+              h.write('collect_trial=' + ('true' if collect else 'false') + '\n')
+          print('KV SAFETY THROTTLE:', collect, reason)
+          print('Frozen within-burst cadence remains 60 seconds; skipped workflow runs make no relay request.')
+          PY
+      - name: Collect short 60-second trial burst through the existing public sampler
+        if: steps.phase.outputs.mode == 'trial' && steps.throttle.outputs.collect_trial == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          samples=31
+          samples=11
           if [ "$EVENT_NAME" = 'push' ]; then samples=6; fi
           python3 scripts/palladium_shadow_trial.py collect --samples "$samples" --output-dir "$RUNNER_TEMP/palladium-shadow-batch"
       - name: Read fresh quote from existing public relay (normal collector after trial expiry)
@@ -172,7 +196,7 @@ jobs:
           print('PUBLIC ONLY; SHADOW ONLY; CURRENT unchanged')
           PY
       - name: Stage verified compressed trial history
-        if: steps.phase.outputs.mode == 'trial'
+        if: steps.phase.outputs.mode == 'trial' && steps.throttle.outputs.collect_trial == 'true'
         run: python3 scripts/palladium_shadow_trial.py stage
       - name: Persist one batch, never one Git commit per minute
         run: |
@@ -196,7 +220,7 @@ jobs:
           done
           exit 1
       - name: Report incomplete acquisition only after preserving available evidence
-        if: steps.phase.outputs.mode == 'trial'
+        if: steps.phase.outputs.mode == 'trial' && steps.throttle.outputs.collect_trial == 'true'
         run: |
           python3 - <<'PY'
           import json
