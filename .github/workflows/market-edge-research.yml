@@ -28,6 +28,8 @@ on:
       - tests/test_market_palladium_hit_controls.py
       - scripts/build_palladium_m_day_comparison.py
       - tests/test_palladium_m_day_comparison.py
+      - scripts/palladium_m_intraday.py
+      - tests/test_palladium_m_intraday.py
       - docs/palladium-hit-controls.md
       - research/onchain-hit-verification.jsonl
       - docs/alert-latency-policy.md
@@ -56,6 +58,10 @@ on:
       - docs/verified-hit-market-context.md
       - scripts/build_palladium_hit_control_comparison.py
       - tests/test_market_palladium_hit_controls.py
+      - scripts/build_palladium_m_day_comparison.py
+      - tests/test_palladium_m_day_comparison.py
+      - scripts/palladium_m_intraday.py
+      - tests/test_palladium_m_intraday.py
       - docs/palladium-hit-controls.md
       - research/onchain-hit-verification.jsonl
       - docs/alert-latency-policy.md
@@ -90,6 +96,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_market*.py' -v
           python3 -m unittest tests.test_verified_hit_market_context -v
           python3 -m unittest tests.test_palladium_m_day_comparison -v
+          python3 -m unittest tests.test_palladium_m_intraday -v
           python3 scripts/test_phase0_correctness.py
       - name: Analyze existing public files only
         run: |
@@ -157,6 +164,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_market*.py'
           python3 -m unittest tests.test_verified_hit_market_context
           python3 -m unittest tests.test_palladium_m_day_comparison
+          python3 -m unittest tests.test_palladium_m_intraday
       - name: Build report without changing source feeds
         run: |
           python3 scripts/build_market_edge_research.py
@@ -184,3 +192,48 @@ jobs:
             fi
           done
           exit 1
+
+  intraday-diagnostic:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate read-only research boundaries and synthetic tests
+        run: |
+          python3 scripts/check_forbidden_admin_access.py
+          python3 scripts/check_private_api_policy.py
+          python3 -m unittest tests.test_palladium_m_intraday -v
+      - name: Inspect every reachable public feed revision in requested calendar windows
+        run: python3 scripts/palladium_m_intraday.py > /tmp/palladium-m-intraday.log
+      - name: Print audit summary
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('/tmp/palladium-m-intraday-report.json').read_text())
+          for d in r['days']:
+              print('DAY', json.dumps(d))
+          print('COUNTS', json.dumps(r['counts']))
+          for key in ('quoteCount','eligibleWindowsByHorizon','screen15mWindows','episodesWith60mSpacing','episodesBothModelsAbove100','episodesBothAbove100AndMathPass','forwardQuoteDiagnostics','windowSummaries','gitHead','candidateManifestSha256'):
+              print(key, json.dumps(r[key]))
+          for episode in r['episodes']:
+              print('EPISODE', json.dumps(episode))
+          print('CURRENT unchanged; NO_VERIFIED_EDGE; retrospective public quotes only')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: palladium-m-intraday-${{ github.run_id }}
+          path: |
+            /tmp/palladium-m-intraday-report.json
+            /tmp/palladium-m-git-quotes.jsonl
+          retention-days: 30
+          if-no-files-found: error
