@@ -6,8 +6,6 @@ The existing public collector remains the only scheduled collection workflow.
 from __future__ import annotations
 
 import argparse
-from collections import Counter
-import copy
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -19,7 +17,7 @@ import time
 import urllib.error
 
 from apply_math_consistency_shadow import positive, expected_blocks_from_difficulty
-from enrich_scrypt_market_history import timestamp
+from enrich_scrypt_market_history import timestamp, cadence
 from sample_public_market_burst import take_sample, get_json
 
 PROTOCOL = Path('research/palladium-shadow-protocol-v1.json')
@@ -54,8 +52,9 @@ def utcnow():
 
 def load_protocol(path=PROTOCOL):
     p = json.loads(Path(path).read_bytes())
-    if (p.get('schemaVersion') != 1 or p.get('id') != 'PALLADIUM_QUOTE_IMPROVEMENT_SHADOW_V1'
-            or p.get('packages') != PACKAGES or p.get('rules') != RULES
+    if (type(p.get('schemaVersion')) is not int or p['schemaVersion'] != 1
+            or p.get('id') != 'PALLADIUM_QUOTE_IMPROVEMENT_SHADOW_V1'
+            or encoded(p.get('packages')) != encoded(PACKAGES) or encoded(p.get('rules')) != encoded(RULES)
             or any(p.get(k) is not False for k in POLICY_FALSE)
             or p.get('verifiedNetReturnPercent') is not None or timestamp(p.get('lockedAt')) is None):
         raise ValueError('Frozen v1 protocol changed or invalid; use a separately reviewed version')
@@ -164,8 +163,7 @@ def observation(snapshot, name):
             returnDifficultyPercent=ret_d, returnHashratePercent=ret_h,
             bothMathPass=q.get('sourceMathClear') is True and all(c['mathStatus']=='PASS' for c in components),
             chains=components, feeBasisVerified=False, deliveredWorkVerified=False)
-    except (ValueError, TypeError, KeyError, OverflowError, ZeroDivisionError) as err:
-        # Never copy raw input or response bodies into a public error report.
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError, ZeroDivisionError) as err:
         reason=str(err) if type(err) is ValueError and str(err).isupper() else 'INVALID_INPUT'
         return dict(status='UNAVAILABLE', package=name, reason=reason)
 
@@ -313,7 +311,11 @@ def load_live_state(protocol,code):
         if exists:raise ValueError('Archive exists without state; do not restart the trial')
         return None
     if STATE.stat().st_size>MAX_STATE_BYTES:raise ValueError('State is too large')
-    s=json.loads(STATE.read_bytes());validate_state(s,protocol,code)
+    s=json.loads(STATE.read_bytes())
+    # Expired evidence keeps its recorded old code hash; newer normal collector code
+    # must not reactivate the trial or prevent the original collector from resuming.
+    expired=timestamp(s.get('expiresAt')) is not None and utcnow()>=timestamp(s['expiresAt'])
+    validate_state(s,protocol,s.get('modelCodeHash') if expired else code)
     if not exists or history_digest(HISTORY)!=s['archiveSha256']:
         raise ValueError('State/archive mismatch; no silent recovery or truncated history')
     return s
@@ -349,14 +351,25 @@ def collect(p,state,code,samples,output,production,*,sampler=None,clock=utcnow,m
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
     checkpoint=output/'new-shadow-samples.jsonl'
     if checkpoint.exists():raise ValueError('Refuse to overwrite a prior batch checkpoint')
+    cadence_rows=[]
+    if production and PUBLIC_HISTORY.exists():
+        if PUBLIC_HISTORY.stat().st_size>MAX_PUBLIC_BYTES:raise ValueError('Public history capacity guard before requests')
+        with PUBLIC_HISTORY.open() as h:
+            for line in h:
+                if line.strip():cadence_rows.append({'collected_at':json.loads(line)['collected_at']})
     metadata={}
     if sampler is None:
         def sampler():
             if not metadata:
                 info=get_json('/main/api/v2/public/buy/info/')
                 registry=get_json('/main/api/v2/mining/algorithms/')
-                metadata.update(info=info,registry=registry)
-            return take_sample(metadata['info'],metadata['registry'])
+                metadata.update(info=info,registry=registry,fetchedAt=clock().isoformat())
+            snap=take_sample(metadata['info'],metadata['registry'])
+            snap['registryMetadataFetchedAt']=metadata['fetchedAt']
+            for algo in snap['algorithms'].values():
+                contract=algo.get('unitContract')
+                if isinstance(contract,dict):contract['observedAt']=metadata['fetchedAt']
+            return snap
     rows,public=[],[]
     deadline=mono()
     starts=[]
@@ -371,20 +384,24 @@ def collect(p,state,code,samples,output,production,*,sampler=None,clock=utcnow,m
                 raise ValueError('Public snapshot expected')
             if any(snap.get(k) is not False for k in ('credentials_used','private_api_used','admin_api_used')):
                 raise ValueError('Public-only provenance failed')
+            sample_at=timestamp(snap.get('collected_at'))
+            if sample_at is None:raise ValueError('Public timestamp required')
+            cadence_rows.append({'collected_at':snap['collected_at']})
+            if isinstance(snap.get('scryptEconomics'),dict):
+                snap['scryptEconomics']['cadence']=cadence(cadence_rows,sample_at)
         except urllib.error.HTTPError as exc:
             snap=None;error='HTTP_'+str(exc.code)
             if exc.code in (401,403,429):state['suspendedHttpStatus']=exc.code
         except Exception as exc:
             snap=None;error=type(exc).__name__
         at=timestamp(snap.get('collected_at')) if snap is not None else clock()
-        # Never label a late return as an in-window observation after automatic expiry.
         if at is None or at>=timestamp(state['expiresAt']):break
         row=process_sample(state,snap,at,error)
         rows.append(row)
         if snap is not None:public.append(snap)
         with checkpoint.open('ab') as h:h.write(encoded(row)+b'\n');h.flush();os.fsync(h.fileno())
         if state['suspendedHttpStatus'] is not None:break
-        deadline=began+60  # no catch-up burst after a slow request
+        deadline=began+60
     batch=dict(requested=samples,attempted=len(rows),collected=len(public),
         newCandidates=sum(x['evaluation']=='CANDIDATE_SHADOW_ONLY' for r in rows for x in r['packages']),
         newRepeatConfirmations=sum(x['evaluation']=='REPEAT_CONFIRMED_SHADOW_ONLY' for r in rows for x in r['packages']),
@@ -431,6 +448,9 @@ def main():
     if not args.smoke and (os.getenv('GITHUB_REF')!='refs/heads/main'
             or os.getenv('GITHUB_EVENT_NAME') not in ('push','schedule','workflow_dispatch')):
         raise ValueError('Only main production workflow may persist this prospective trial')
+    out=args.output_dir.resolve()
+    if out==Path.cwd().resolve() or Path.cwd().resolve() in out.parents:
+        raise ValueError('Batch checkpoints must be outside the source repository')
     if args.smoke and args.samples>6:raise ValueError('PR smoke is capped at six samples')
     collect(p,s,code,args.samples,args.output_dir,not args.smoke)
 
