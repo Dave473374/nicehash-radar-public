@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-26T07:30:14.693625+00:00",
+  "generatedAt": "2026-09-26T07:56:06.772864+00:00",
   "role": "PHONE_DELIVERY_LATENCY_RESEARCH_ONLY",
   "currentProductionModelChanged": false,
   "canRaiseBuySignal": false,
@@ -10,18 +10,18 @@
     "lateCapture": 299,
     "conflictingSnapshot": 1
   },
-  "status": "RECOMMENDED",
-  "fiveMinutePushRecommended": true,
-  "verdict": "UPGRADE_PHONE_DELIVERY",
-  "reason": "Verified PRIMARY BUY NOW/STRONG BUY windows are often short enough for hourly polling to miss.",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "fiveMinutePushRecommended": false,
+  "verdict": "KEEP_HOURLY_FOR_NOW",
+  "reason": "Need at least 3 resolved verified PRIMARY BUY NOW/STRONG BUY windows before changing delivery infrastructure.",
   "currentRegime": {
     "relayVersion": "2.9.0",
     "decisionEngine": "PROFITABILITY_AND_BREAK_EVEN_GATED_MINING_QUALITY_VS_HISTORY"
   },
   "lookbackDays": 7,
-  "resolvedWindowCount": 3,
-  "shortWindowCount": 3,
-  "veryShortStrongWindowCount": 2,
+  "resolvedWindowCount": 2,
+  "shortWindowCount": 2,
+  "veryShortStrongWindowCount": 1,
   "shortWindowRate": 1.0,
   "thresholds": {
     "minimumResolvedWindows": 3,
@@ -41,18 +41,6 @@
     "primaryOnly": true
   },
   "windows": [
-    {
-      "package": "Silver S",
-      "startAt": "2026-09-19T07:30:59.443000+00:00",
-      "lastQualifiedAt": "2026-09-19T07:30:59.443000+00:00",
-      "maxSignal": "STRONG BUY",
-      "minEvPercent": 103.9834,
-      "status": "RESOLVED",
-      "closureReason": "NEXT_VALID_SNAPSHOT_NOT_QUALIFIED",
-      "endAt": "2026-09-19T07:41:24.992000+00:00",
-      "observedLowerBoundMinutes": 0.0,
-      "observedUpperBoundMinutes": 10.426
-    },
     {
       "package": "Silver S",
       "startAt": "2026-09-20T04:21:28.362000+00:00",
