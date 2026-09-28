@@ -2,15 +2,15 @@
 
 Stanje: **INTERIM_TRIAL_RUNNING**. Vsi časi v tabeli so v območju Europe/Ljubljana.
 
-- Zadnji shranjeni vzorec: 2026-09-28T12:12:42.575766+02:00
-- Shranjeni poskusi: 767
-- Večje vrzeli med shranjenimi poskusi (>90 s): 41
-- Čas brez poznejšega objavljenega vzorca do preseka: 2873.7 s; serija je lahko še v teku.
+- Zadnji shranjeni vzorec: 2026-09-28T13:31:37.914020+02:00
+- Shranjeni poskusi: 778
+- Večje vrzeli med shranjenimi poskusi (>90 s): 42
+- Čas brez poznejšega objavljenega vzorca do preseka: 45.2 s; serija je lahko še v teku.
 
 | Paket | Uporabni vzorci | Neuporabni | Kandidati | Potrjeni s 3 opažanji |
 |---|---:|---:|---:|---:|
-| Palladium S | 731 | 36 | 0 | 0 |
-| Palladium M | 731 | 36 | 0 | 0 |
+| Palladium S | 742 | 36 | 0 | 0 |
+| Palladium M | 742 | 36 | 0 | 0 |
 
 **Pomembno:** neuporaben ali izpuščen paket ni samodejno potrjen `available:false`.
 Točnega števila minut razpoložljivosti iz teh podatkov ne določamo.
