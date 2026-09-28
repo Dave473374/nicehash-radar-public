@@ -5,7 +5,7 @@ Stanje: **INTERIM_TRIAL_RUNNING**. Vsi časi v tabeli so v območju Europe/Ljubl
 - Zadnji shranjeni vzorec: 2026-09-28T10:58:20.302890+02:00
 - Shranjeni poskusi: 756
 - Večje vrzeli med shranjenimi poskusi (>90 s): 40
-- Čas brez poznejšega objavljenega vzorca do preseka: 274.2 s; serija je lahko še v teku.
+- Čas brez poznejšega objavljenega vzorca do preseka: 1732.0 s; serija je lahko še v teku.
 
 | Paket | Uporabni vzorci | Neuporabni | Kandidati | Potrjeni s 3 opažanji |
 |---|---:|---:|---:|---:|
