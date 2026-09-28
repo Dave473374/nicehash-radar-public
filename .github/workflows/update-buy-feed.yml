@@ -26,6 +26,69 @@ jobs:
       - name: Validate upstream JSON
         run: python -m json.tool buy-feed.json > /dev/null
 
+      - name: Reject stale or unhealthy BUY feed
+        env:
+          MAX_FEED_AGE_SECONDS: "420"
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          feed = json.loads(Path("buy-feed.json").read_text(encoding="utf-8"))
+
+          if feed.get("status") != "BUY FEED OK":
+              raise SystemExit(f"BUY feed status is not healthy: {feed.get('status')!r}")
+
+          if feed.get("ok") is not True:
+              raise SystemExit(f"BUY feed ok flag is not true: {feed.get('ok')!r}")
+
+          packages = feed.get("packages")
+          if not isinstance(packages, list) or not packages:
+              raise SystemExit("BUY feed packages are missing or empty")
+
+          if not any(package.get("available") is True for package in packages if isinstance(package, dict)):
+              raise SystemExit("BUY feed has no available=true package")
+
+          checked_at_raw = feed.get("checked_at")
+          if not isinstance(checked_at_raw, str) or not checked_at_raw.strip():
+              raise SystemExit("BUY feed checked_at is missing")
+
+          normalized = checked_at_raw.strip()
+          if normalized.endswith("Z"):
+              normalized = normalized[:-1] + "+00:00"
+
+          try:
+              checked_at = datetime.fromisoformat(normalized)
+          except ValueError as exc:
+              raise SystemExit(f"BUY feed checked_at is invalid: {checked_at_raw!r}") from exc
+
+          if checked_at.tzinfo is None or checked_at.utcoffset() is None:
+              raise SystemExit(f"BUY feed checked_at has no timezone: {checked_at_raw!r}")
+
+          now = datetime.now(timezone.utc)
+          checked_at_utc = checked_at.astimezone(timezone.utc)
+          age_seconds = (now - checked_at_utc).total_seconds()
+          max_age_seconds = int(os.environ["MAX_FEED_AGE_SECONDS"])
+
+          if age_seconds < 0:
+              raise SystemExit(
+                  f"BUY feed checked_at is in the future by {-age_seconds:.1f}s: {checked_at_raw}"
+              )
+
+          if age_seconds > max_age_seconds:
+              raise SystemExit(
+                  f"STALE BUY FEED: checked_at={checked_at_raw}, "
+                  f"age={age_seconds:.1f}s, limit={max_age_seconds}s"
+              )
+
+          print(
+              f"BUY FEED FRESHNESS OK: checked_at={checked_at_raw}, "
+              f"age={age_seconds:.1f}s, limit={max_age_seconds}s"
+          )
+          PY
+
       - name: Apply NEW calibrated shadow
         run: python3 scripts/apply_calibrated_shadow.py
 
