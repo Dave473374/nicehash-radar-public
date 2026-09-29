@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "PALLADIUM_SHADOW_V1_HIGH_COVERAGE_REPEAT_2026_09_29",
+  "role": "FORWARD_ONLY_HIGH_COVERAGE_REPEAT_OF_FROZEN_V1_NOT_TRADING_VALIDATION",
+  "frozenProtocolPath": "research/palladium-shadow-protocol-v1.json",
+  "frozenProtocolHash": "1fcd3fcd9c45a45a86b781e7423b46a1702cc0d9c1a951beae9947af1993f3a3",
+  "frozenRuleChanged": false,
+  "packages": {
+    "Palladium S": "PRIMARY",
+    "Palladium M": "SECONDARY"
+  },
+  "source": {
+    "endpoint": "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed-shadow",
+    "requiredResponseContract": {
+      "shadow_sampling_mode": "NO_KV",
+      "shadow_history_access": "NONE",
+      "history_status": "HISTORY BYPASSED",
+      "history_saved": false,
+      "history_key": null
+    },
+    "cloudflareHistoryKvUsedBySampling": false
+  },
+  "collection": {
+    "intervalSeconds": 60,
+    "samplesPerBatch": 31,
+    "batchesPerScheduledRun": 2,
+    "targetCoveragePercent": 90,
+    "coverageGuaranteed": false,
+    "activation": "First persisted main-branch repeat sample; fixed expiry remains startedAt + 72 hours.",
+    "scheduleWindowUtc": "2026-09-29 through 2026-10-02; merge push activates immediately, bounded date cron supplies follow-up runs."
+  },
+  "storage": {
+    "history": "calibration/palladium-shadow-repeat-v1-history.jsonl",
+    "publicHistory": "calibration/palladium-shadow-repeat-v1-public.jsonl",
+    "state": "research/palladium-shadow-repeat-v1-state.json",
+    "report": "research/palladium-shadow-repeat-v1-report.json",
+    "latestEconomics": "research/palladium-shadow-repeat-v1-latest-economics.json",
+    "evaluation": "research/palladium-shadow-repeat-v1-evaluation.json"
+  },
+  "canRaiseSignal": false,
+  "canSendNotifications": false,
+  "automaticPurchase": false,
+  "currentProductionModelChanged": false,
+  "adminApiUsed": false,
+  "privateApiUsed": false,
+  "limitations": [
+    "The target is measured coverage, not guaranteed continuous uptime.",
+    "GitHub scheduling and runner startup can create gaps; all actual gaps remain recorded.",
+    "The NO-KV response contract demonstrates that the shadow route bypasses RADAR_HISTORY in the deployed Worker code path, but Cloudflare platform billing counters are not independently read by this repository.",
+    "Modelled returns remain conditional and are not realized profit, HIT or MISS."
+  ]
+}
