@@ -1,0 +1,168 @@
+name: Palladium Shadow v1 High-Coverage Repeat
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/palladium_shadow_repeat_v1.py'
+      - 'scripts/evaluate_palladium_shadow_repeat_v1.py'
+      - 'tests/test_palladium_shadow_repeat_v1.py'
+      - 'research/palladium-shadow-repeat-v1.json'
+      - '.github/workflows/palladium-shadow-repeat-v1.yml'
+  pull_request:
+    paths:
+      - 'scripts/palladium_shadow_repeat_v1.py'
+      - 'scripts/evaluate_palladium_shadow_repeat_v1.py'
+      - 'tests/test_palladium_shadow_repeat_v1.py'
+      - 'research/palladium-shadow-repeat-v1.json'
+      - '.github/workflows/palladium-shadow-repeat-v1.yml'
+  schedule:
+    - cron: '17 * 29-30 9 *'
+    - cron: '17 * 1 10 *'
+    - cron: '17 0-14 2 10 *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('palladium-repeat-pr-{0}', github.ref) || 'palladium-shadow-repeat-v1-main' }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Frozen-rule repeat harness tests
+        run: |
+          python3 -m unittest tests.test_palladium_shadow_repeat_v1 -v
+          python3 -m unittest tests.test_palladium_shadow_trial tests.test_palladium_shadow_evaluation -v
+          python3 scripts/check_forbidden_admin_access.py
+          python3 scripts/check_private_api_policy.py
+          python3 scripts/test_phase0_correctness.py
+
+  collect:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 135
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Determine isolated repeat phase
+        id: phase
+        run: python3 scripts/palladium_shadow_repeat_v1.py plan
+
+      - name: Collect two frozen 31-sample minute batches
+        if: steps.phase.outputs.mode == 'trial'
+        run: |
+          set -euo pipefail
+          git config user.name 'NiceHash Radar Bot'
+          git config user.email 'actions@github.com'
+
+          for batch in 1 2; do
+            out="$RUNNER_TEMP/palladium-shadow-repeat-v1-$batch"
+            rm -rf "$out"
+            python3 scripts/palladium_shadow_repeat_v1.py collect --samples 31 --output-dir "$out"
+            python3 scripts/palladium_shadow_repeat_v1.py stage
+
+            git add calibration/palladium-shadow-repeat-v1-public.jsonl
+            git add research/palladium-shadow-repeat-v1-state.json
+            git add research/palladium-shadow-repeat-v1-report.json
+            git add research/palladium-shadow-repeat-v1-latest-economics.json
+            python3 scripts/radar_snapshot_archive.py staged-guard
+
+            if ! git diff --cached --quiet; then
+              git commit -m "Record Palladium v1 NO-KV repeat batch ${batch} (shadow only)"
+              pushed=false
+              for attempt in 1 2 3; do
+                if git push origin HEAD:main > "$RUNNER_TEMP/repeat-push.log" 2>&1; then
+                  cat "$RUNNER_TEMP/repeat-push.log"
+                  pushed=true
+                  break
+                fi
+                cat "$RUNNER_TEMP/repeat-push.log"
+                if grep -Eq 'GH001|exceeds.*file size limit|Large files detected' "$RUNNER_TEMP/repeat-push.log"; then
+                  exit 1
+                fi
+                git fetch origin main
+                if ! git rebase origin/main; then
+                  git rebase --abort || true
+                  exit 1
+                fi
+                sleep $((attempt * 2))
+              done
+              [ "$pushed" = true ] || exit 1
+            fi
+
+            status=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path('research/palladium-shadow-repeat-v1-report.json').read_text())['status'])
+          PY
+            )
+            if [ "$status" = 'SUSPENDED_HTTP_POLICY' ]; then
+              echo 'Repeat suspended by HTTP safety policy after persisted evidence.'
+              break
+            fi
+          done
+
+      - name: Evaluate saved repeat evidence read-only
+        if: steps.phase.outputs.mode == 'trial' || steps.phase.outputs.mode == 'complete' || steps.phase.outputs.mode == 'suspended'
+        run: |
+          python3 scripts/evaluate_palladium_shadow_repeat_v1.py
+          git diff --exit-code -- scripts tests research/palladium-shadow-protocol-v1.json research/palladium-shadow-state.json research/palladium-shadow-report.json || true
+
+      - name: Publish only repeat report and evaluation
+        if: steps.phase.outputs.mode == 'trial' || steps.phase.outputs.mode == 'complete' || steps.phase.outputs.mode == 'suspended'
+        run: |
+          set -euo pipefail
+          git config user.name 'NiceHash Radar Bot'
+          git config user.email 'actions@github.com'
+          git add research/palladium-shadow-repeat-v1-report.json
+          git add research/palladium-shadow-repeat-v1-evaluation.json
+          git add research/palladium-shadow-repeat-v1-evaluation.md
+          python3 scripts/radar_snapshot_archive.py staged-guard
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Update read-only Palladium v1 NO-KV repeat evaluation'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main
+            if ! git rebase origin/main; then git rebase --abort || true; exit 1; fi
+            sleep $((attempt * 2))
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: palladium-shadow-repeat-v1-${{ github.run_id }}
+          path: ${{ runner.temp }}/palladium-shadow-repeat-v1-*/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Fail closed if HTTP policy suspended collection
+        if: always() && (steps.phase.outputs.mode == 'trial' || steps.phase.outputs.mode == 'suspended')
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('research/palladium-shadow-repeat-v1-report.json')
+          if p.exists() and json.loads(p.read_text()).get('status') == 'SUSPENDED_HTTP_POLICY':
+              raise SystemExit('Palladium repeat suspended by 401/403/429 safety policy')
+          PY
