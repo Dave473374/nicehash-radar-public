@@ -1,0 +1,111 @@
+name: Verify Palladium NO-KV Shadow Endpoint
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/palladium-shadow-no-kv-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Take three minute-spaced NO-KV public shadow samples
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/palladium-no-kv-smoke"
+          mkdir -p "$out"
+          for i in 1 2 3; do
+            curl --fail --silent --show-error --proto '=https' --max-time 30 --max-filesize 4000000 \
+              "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed-shadow" \
+              -o "$out/sample-$i.json"
+            if [ "$i" -lt 3 ]; then sleep 60; fi
+          done
+      - name: Verify KV bypass markers and summarize Palladium availability
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "palladium-no-kv-smoke"
+          samples = []
+          times = []
+          for path in sorted(root.glob("sample-*.json")):
+              data = json.loads(path.read_text())
+              assert data.get("status") in ("BUY FEED OK", "BUY FEED WARNING")
+              assert data.get("relay_version") == "2.9.0"
+              assert data.get("shadow_sampling_mode") == "NO_KV"
+              assert data.get("shadow_history_access") == "NONE"
+              assert data.get("history_status") == "HISTORY BYPASSED"
+              assert data.get("history_saved") is False
+              assert data.get("history_key") is None
+              checked = data.get("checked_at")
+              assert isinstance(checked, str) and checked
+              at = datetime.fromisoformat(checked.replace("Z", "+00:00"))
+              times.append(at)
+              packages = data.get("packages")
+              assert isinstance(packages, list)
+              palladium = {}
+              for name in ("Palladium S", "Palladium M"):
+                  matches = [p for p in packages if isinstance(p, dict) and p.get("name") == name]
+                  if len(matches) == 1:
+                      p = matches[0]
+                      palladium[name] = {
+                          "present": True,
+                          "available": p.get("available"),
+                          "data_quality": p.get("data_quality"),
+                          "price_btc": p.get("price_btc"),
+                          "duration_seconds": p.get("duration_seconds"),
+                          "package_hashrate_hps": p.get("package_hashrate_hps"),
+                          "primary_currency": (p.get("primary_chain") or {}).get("currency"),
+                          "merge_currency": (p.get("merge_chain") or {}).get("currency"),
+                      }
+                  else:
+                      palladium[name] = {"present": False}
+              samples.append({
+                  "checked_at": checked,
+                  "status": data.get("status"),
+                  "ok": data.get("ok"),
+                  "valid_package_count": data.get("valid_package_count"),
+                  "warning_package_count": data.get("warning_package_count"),
+                  "palladium": palladium,
+              })
+          assert len(samples) == 3
+          assert all(b > a for a, b in zip(times, times[1:])), "checked_at must increase"
+          summary = {
+              "role": "NO_KV_SHADOW_ENDPOINT_SMOKE",
+              "samples": samples,
+              "kvBypassVerifiedByResponseContract": True,
+              "productionBuyFeedModifiedByThisWorkflow": False,
+              "adminApiUsed": False,
+              "privateApiUsed": False,
+              "canRaiseSignal": False,
+              "automaticPurchase": False,
+              "note": "Package absence is availability evidence only; it is not evidence that no opportunity existed outside observed samples."
+          }
+          (root / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+          print(json.dumps(summary, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: palladium-no-kv-smoke-${{ github.run_id }}
+          path: ${{ runner.temp }}/palladium-no-kv-smoke/summary.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Existing repository safety guards
+        run: |
+          python3 scripts/check_forbidden_admin_access.py
+          python3 scripts/check_private_api_policy.py
