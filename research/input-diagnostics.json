@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-01T15:36:54.512267+00:00",
-  "sourceQuoteAt": "2026-10-01T15:24:01.948Z",
-  "sourceQuoteAgeMinutes": 12.876071116666667,
+  "generatedAt": "2026-10-01T16:00:46.220758+00:00",
+  "sourceQuoteAt": "2026-10-01T15:53:41.854Z",
+  "sourceQuoteAgeMinutes": 7.0727793,
   "sourceQuoteFresh": false,
   "role": "INPUT_DIAGNOSTICS_ONLY",
   "currentProductionModelChanged": false,
@@ -10,7 +10,7 @@
   "privateApiUsed": false,
   "canRaiseSignal": false,
   "counts": {
-    "duplicateChainTimestamp": 9692,
+    "duplicateChainTimestamp": 9702,
     "lateObservationExcluded": 41,
     "invalidOrUnavailableQuoteTime": 207
   },
@@ -29,7 +29,7 @@
           "coin": "KAS"
         }
       ],
-      "feedExpectedReturnPercent": 44.1829,
+      "feedExpectedReturnPercent": 40.1977,
       "conditionalDifficultyExpectedReturnPercent": null,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
@@ -47,43 +47,7 @@
           "coin": "KAS"
         }
       ],
-      "feedExpectedReturnPercent": 44.1772,
-      "conditionalDifficultyExpectedReturnPercent": null,
-      "conditionalEstimateIsVerifiedReturn": false,
-      "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
-    },
-    {
-      "package": "Bronze S",
-      "currency": "BTC",
-      "currentSignal": "WAIT",
-      "checks": [
-        {
-          "status": "NOT_APPLICABLE",
-          "algorithm": "EQUIHASH",
-          "reason": "Difficulty convention not verified for this coin/algorithm pair.",
-          "chain": "primary_chain",
-          "coin": "ZEC"
-        }
-      ],
-      "feedExpectedReturnPercent": 71.0203,
-      "conditionalDifficultyExpectedReturnPercent": null,
-      "conditionalEstimateIsVerifiedReturn": false,
-      "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
-    },
-    {
-      "package": "Bronze M",
-      "currency": "BTC",
-      "currentSignal": "WAIT",
-      "checks": [
-        {
-          "status": "NOT_APPLICABLE",
-          "algorithm": "EQUIHASH",
-          "reason": "Difficulty convention not verified for this coin/algorithm pair.",
-          "chain": "primary_chain",
-          "coin": "ZEC"
-        }
-      ],
-      "feedExpectedReturnPercent": 71.0203,
+      "feedExpectedReturnPercent": 40.2034,
       "conditionalDifficultyExpectedReturnPercent": null,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
@@ -96,25 +60,25 @@
         {
           "status": "PASS",
           "algorithm": "SCRYPT",
-          "feedExpectedBlocks": 0.002683338788842379,
-          "difficultyExpectedBlocks": 0.0027980208353574013,
-          "signedDifferencePercent": -4.098685,
-          "absoluteDifferencePercent": 4.098685,
+          "feedExpectedBlocks": 0.00270740232265554,
+          "difficultyExpectedBlocks": 0.0027031885855684423,
+          "signedDifferencePercent": 0.15588,
+          "absoluteDifferencePercent": 0.15588,
           "difficulty": 89270498.40212,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
           "difficultyConvention": "CONDITIONAL_BDIFF_APPROXIMATION",
           "difficultyConventionVerifiedForUpstreamField": false,
-          "bdiffRefinedExpectedBlocks": 0.002797978140947682,
+          "bdiffRefinedExpectedBlocks": 0.002703147338184019,
           "constantApproximationErrorPercent": 0.0015259021896696368,
           "externalInputsIndependentlyVerified": false,
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 150.0,
-            "impliedBlockTimeSeconds": 143.8519732376989,
-            "networkHashrateDerivedExpectedBlocks": 0.002683338788842379,
+            "impliedBlockTimeSeconds": 150.23382037288818,
+            "networkHashrateDerivedExpectedBlocks": 0.00270740232265554,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 0.9590131549179927,
+            "networkVsDifficultyMultiplier": 1.0015588024859212,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -125,25 +89,25 @@
         {
           "status": "CRITICAL",
           "algorithm": "SCRYPT",
-          "feedExpectedBlocks": 0.007381725964382573,
-          "difficultyExpectedBlocks": 0.00601039774545153,
-          "signedDifferencePercent": 22.815931,
-          "absoluteDifferencePercent": 22.815931,
-          "difficulty": 41558100.65996,
+          "feedExpectedBlocks": 0.006891049099278632,
+          "difficultyExpectedBlocks": 0.005633154516164537,
+          "signedDifferencePercent": 22.330198,
+          "absoluteDifferencePercent": 22.330198,
+          "difficulty": 42838340.68747,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
           "difficultyConvention": "CONDITIONAL_BDIFF_APPROXIMATION",
           "difficultyConventionVerifiedForUpstreamField": false,
-          "bdiffRefinedExpectedBlocks": 0.0060103060340601505,
+          "bdiffRefinedExpectedBlocks": 0.0056330685610480186,
           "constantApproximationErrorPercent": 0.0015259021896696368,
           "externalInputsIndependentlyVerified": false,
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 60.0,
-            "impliedBlockTimeSeconds": 73.68955876474716,
-            "networkHashrateDerivedExpectedBlocks": 0.007381725964382573,
+            "impliedBlockTimeSeconds": 73.39811907702358,
+            "networkHashrateDerivedExpectedBlocks": 0.006891049099278632,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 1.228159312745786,
+            "networkVsDifficultyMultiplier": 1.2233019846170596,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -152,8 +116,8 @@
           "coin": "DOGE"
         }
       ],
-      "feedExpectedReturnPercent": 95.4626,
-      "conditionalDifficultyExpectedReturnPercent": 80.75711380431872,
+      "feedExpectedReturnPercent": 89.8006,
+      "conditionalDifficultyExpectedReturnPercent": 75.8234497446391,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
     },
@@ -165,25 +129,25 @@
         {
           "status": "PASS",
           "algorithm": "SCRYPT",
-          "feedExpectedBlocks": 0.027388064631352283,
-          "difficultyExpectedBlocks": 0.028558591183970035,
-          "signedDifferencePercent": -4.098685,
-          "absoluteDifferencePercent": 4.098685,
+          "feedExpectedBlocks": 0.02763261891243848,
+          "difficultyExpectedBlocks": 0.027589612156423447,
+          "signedDifferencePercent": 0.15588,
+          "absoluteDifferencePercent": 0.15588,
           "difficulty": 89270498.40212,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
           "difficultyConvention": "CONDITIONAL_BDIFF_APPROXIMATION",
           "difficultyConventionVerifiedForUpstreamField": false,
-          "bdiffRefinedExpectedBlocks": 0.028558155414451235,
+          "bdiffRefinedExpectedBlocks": 0.027589191172351236,
           "constantApproximationErrorPercent": 0.0015259021896696368,
           "externalInputsIndependentlyVerified": false,
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 150.0,
-            "impliedBlockTimeSeconds": 143.8519732376989,
-            "networkHashrateDerivedExpectedBlocks": 0.027388064631352283,
+            "impliedBlockTimeSeconds": 150.23382037288818,
+            "networkHashrateDerivedExpectedBlocks": 0.02763261891243848,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 0.9590131549179927,
+            "networkVsDifficultyMultiplier": 1.0015588024859212,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -194,25 +158,25 @@
         {
           "status": "CRITICAL",
           "algorithm": "SCRYPT",
-          "feedExpectedBlocks": 0.0753431466216981,
-          "difficultyExpectedBlocks": 0.06134639524350796,
-          "signedDifferencePercent": 22.815931,
-          "absoluteDifferencePercent": 22.815931,
-          "difficulty": 41558100.65996,
+          "feedExpectedBlocks": 0.07033226354053605,
+          "difficultyExpectedBlocks": 0.05749378683674149,
+          "signedDifferencePercent": 22.330198,
+          "absoluteDifferencePercent": 22.330198,
+          "difficulty": 42838340.68747,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
           "difficultyConvention": "CONDITIONAL_BDIFF_APPROXIMATION",
           "difficultyConventionVerifiedForUpstreamField": false,
-          "bdiffRefinedExpectedBlocks": 0.061345459171803195,
+          "bdiffRefinedExpectedBlocks": 0.05749290955117574,
           "constantApproximationErrorPercent": 0.0015259021896696368,
           "externalInputsIndependentlyVerified": false,
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 60.0,
-            "impliedBlockTimeSeconds": 73.68955876474716,
-            "networkHashrateDerivedExpectedBlocks": 0.0753431466216981,
+            "impliedBlockTimeSeconds": 73.39811907702358,
+            "networkHashrateDerivedExpectedBlocks": 0.07033226354053605,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 1.228159312745786,
+            "networkVsDifficultyMultiplier": 1.2233019846170596,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -221,8 +185,8 @@
           "coin": "DOGE"
         }
       ],
-      "feedExpectedReturnPercent": 97.4359,
-      "conditionalDifficultyExpectedReturnPercent": 82.42645548564289,
+      "feedExpectedReturnPercent": 91.6534,
+      "conditionalDifficultyExpectedReturnPercent": 77.3878515907077,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
     },
@@ -232,27 +196,27 @@
       "currentSignal": "WAIT",
       "checks": [
         {
-          "status": "PASS",
+          "status": "WARNING",
           "algorithm": "SHA256ASICBOOST",
-          "feedExpectedBlocks": 0.0069855271521571186,
-          "difficultyExpectedBlocks": 0.00730109054304527,
-          "signedDifferencePercent": -4.32214,
-          "absoluteDifferencePercent": 4.32214,
-          "difficulty": 516615484351.93823,
+          "feedExpectedBlocks": 0.006803123606365099,
+          "difficultyExpectedBlocks": 0.007205088305732437,
+          "signedDifferencePercent": -5.5789,
+          "absoluteDifferencePercent": 5.5789,
+          "difficulty": 523498986708.0134,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
           "difficultyConvention": "CONDITIONAL_BDIFF_APPROXIMATION",
           "difficultyConventionVerifiedForUpstreamField": false,
-          "bdiffRefinedExpectedBlocks": 0.007300979137244748,
+          "bdiffRefinedExpectedBlocks": 0.007204978364809803,
           "constantApproximationErrorPercent": 0.0015259021896696368,
           "externalInputsIndependentlyVerified": false,
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 600.0,
-            "impliedBlockTimeSeconds": 574.0671570340617,
-            "networkHashrateDerivedExpectedBlocks": 0.0069855271521571186,
+            "impliedBlockTimeSeconds": 566.5265976784049,
+            "networkHashrateDerivedExpectedBlocks": 0.006803123606365099,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 0.9567785950567694,
+            "networkVsDifficultyMultiplier": 0.9442109961306748,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -261,8 +225,8 @@
           "coin": "BCH"
         }
       ],
-      "feedExpectedReturnPercent": 79.1551,
-      "conditionalDifficultyExpectedReturnPercent": 82.7308164818069,
+      "feedExpectedReturnPercent": 76.8845,
+      "conditionalDifficultyExpectedReturnPercent": 81.42728627076595,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
     },
@@ -272,27 +236,27 @@
       "currentSignal": "WAIT",
       "checks": [
         {
-          "status": "PASS",
+          "status": "WARNING",
           "algorithm": "SHA256ASICBOOST",
-          "feedExpectedBlocks": 0.07140761088871722,
-          "difficultyExpectedBlocks": 0.07463336999557386,
-          "signedDifferencePercent": -4.32214,
-          "absoluteDifferencePercent": 4.32214,
-          "difficulty": 516615484351.93823,
+          "feedExpectedBlocks": 0.06954304130950992,
+          "difficultyExpectedBlocks": 0.07365201379193158,
+          "signedDifferencePercent": -5.5789,
+          "absoluteDifferencePercent": 5.5789,
+          "difficulty": 523498986708.0134,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
           "difficultyConvention": "CONDITIONAL_BDIFF_APPROXIMATION",
           "difficultyConventionVerifiedForUpstreamField": false,
-          "bdiffRefinedExpectedBlocks": 0.07463223118072408,
+          "bdiffRefinedExpectedBlocks": 0.0736508899513891,
           "constantApproximationErrorPercent": 0.0015259021896696368,
           "externalInputsIndependentlyVerified": false,
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 600.0,
-            "impliedBlockTimeSeconds": 574.0671570340617,
-            "networkHashrateDerivedExpectedBlocks": 0.07140761088871722,
+            "impliedBlockTimeSeconds": 566.5265976784049,
+            "networkHashrateDerivedExpectedBlocks": 0.06954304130950992,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 0.9567785950567694,
+            "networkVsDifficultyMultiplier": 0.9442109961306748,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -301,8 +265,8 @@
           "coin": "BCH"
         }
       ],
-      "feedExpectedReturnPercent": 80.9141,
-      "conditionalDifficultyExpectedReturnPercent": 84.56927907029149,
+      "feedExpectedReturnPercent": 78.5931,
+      "conditionalDifficultyExpectedReturnPercent": 83.23678152122741,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
     },
@@ -314,10 +278,10 @@
         {
           "status": "PASS",
           "algorithm": "SHA256ASICBOOST",
-          "feedExpectedBlocks": 2.7712510780711328e-05,
+          "feedExpectedBlocks": 2.747706542065213e-05,
           "difficultyExpectedBlocks": 2.841171720034794e-05,
-          "signedDifferencePercent": -2.460979,
-          "absoluteDifferencePercent": 2.460979,
+          "signedDifferencePercent": -3.28967,
+          "absoluteDifferencePercent": 3.28967,
           "difficulty": 132757073449488.52,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
@@ -329,10 +293,10 @@
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 600.0,
-            "impliedBlockTimeSeconds": 585.2341254552249,
-            "networkHashrateDerivedExpectedBlocks": 2.7712510780711328e-05,
+            "impliedBlockTimeSeconds": 580.2619791030928,
+            "networkHashrateDerivedExpectedBlocks": 2.747706542065213e-05,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 0.9753902090920415,
+            "networkVsDifficultyMultiplier": 0.9671032985051546,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -341,7 +305,7 @@
           "coin": "BTC"
         }
       ],
-      "feedExpectedReturnPercent": 85.7356,
+      "feedExpectedReturnPercent": 85.0072,
       "conditionalDifficultyExpectedReturnPercent": 87.89875008857643,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
@@ -354,10 +318,10 @@
         {
           "status": "PASS",
           "algorithm": "SHA256ASICBOOST",
-          "feedExpectedBlocks": 0.0002832834435361603,
+          "feedExpectedBlocks": 0.00028087666874444404,
           "difficultyExpectedBlocks": 0.0002904308869368901,
-          "signedDifferencePercent": -2.460979,
-          "absoluteDifferencePercent": 2.460979,
+          "signedDifferencePercent": -3.28967,
+          "absoluteDifferencePercent": 3.28967,
           "difficulty": 132757073449488.52,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
@@ -369,10 +333,10 @@
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 600.0,
-            "impliedBlockTimeSeconds": 585.2341254552249,
-            "networkHashrateDerivedExpectedBlocks": 0.0002832834435361603,
+            "impliedBlockTimeSeconds": 580.2619791030928,
+            "networkHashrateDerivedExpectedBlocks": 0.00028087666874444404,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 0.9753902090920415,
+            "networkVsDifficultyMultiplier": 0.9671032985051546,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -381,7 +345,7 @@
           "coin": "BTC"
         }
       ],
-      "feedExpectedReturnPercent": 87.6408,
+      "feedExpectedReturnPercent": 86.8962,
       "conditionalDifficultyExpectedReturnPercent": 89.85205564610037,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
@@ -392,27 +356,27 @@
       "currentSignal": "WAIT",
       "checks": [
         {
-          "status": "PASS",
+          "status": "WARNING",
           "algorithm": "SHA256ASICBOOST_USDT",
-          "feedExpectedBlocks": 0.004191316291294271,
-          "difficultyExpectedBlocks": 0.0043806543258271624,
-          "signedDifferencePercent": -4.32214,
-          "absoluteDifferencePercent": 4.32214,
-          "difficulty": 516615484351.93823,
+          "feedExpectedBlocks": 0.00408187416381906,
+          "difficultyExpectedBlocks": 0.004323052983439463,
+          "signedDifferencePercent": -5.5789,
+          "absoluteDifferencePercent": 5.5789,
+          "difficulty": 523498986708.0134,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
           "difficultyConvention": "CONDITIONAL_BDIFF_APPROXIMATION",
           "difficultyConventionVerifiedForUpstreamField": false,
-          "bdiffRefinedExpectedBlocks": 0.004380587482346849,
+          "bdiffRefinedExpectedBlocks": 0.004322987018885882,
           "constantApproximationErrorPercent": 0.0015259021896696368,
           "externalInputsIndependentlyVerified": false,
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 600.0,
-            "impliedBlockTimeSeconds": 574.0671570340617,
-            "networkHashrateDerivedExpectedBlocks": 0.004191316291294271,
+            "impliedBlockTimeSeconds": 566.5265976784049,
+            "networkHashrateDerivedExpectedBlocks": 0.00408187416381906,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 0.9567785950567694,
+            "networkVsDifficultyMultiplier": 0.9442109961306748,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -421,8 +385,8 @@
           "coin": "BCH"
         }
       ],
-      "feedExpectedReturnPercent": 79.9535,
-      "conditionalDifficultyExpectedReturnPercent": 83.56526030763443,
+      "feedExpectedReturnPercent": 77.5882,
+      "conditionalDifficultyExpectedReturnPercent": 82.1725430375285,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
     },
@@ -432,27 +396,27 @@
       "currentSignal": "WAIT",
       "checks": [
         {
-          "status": "PASS",
+          "status": "WARNING",
           "algorithm": "SHA256ASICBOOST_USDT",
-          "feedExpectedBlocks": 0.016610031228462486,
-          "difficultyExpectedBlocks": 0.01736037084679653,
-          "signedDifferencePercent": -4.32214,
-          "absoluteDifferencePercent": 4.32214,
-          "difficulty": 516615484351.93823,
+          "feedExpectedBlocks": 0.016025135606104458,
+          "difficultyExpectedBlocks": 0.016971985786836407,
+          "signedDifferencePercent": -5.5789,
+          "absoluteDifferencePercent": 5.5789,
+          "difficulty": 523498986708.0134,
           "formula": "hashrate_hps * duration_seconds / (difficulty * 2^32)",
           "differenceKind": "MODEL_DISAGREEMENT_NOT_A_VERIFIED_DATA_ERROR",
           "difficultyConvention": "CONDITIONAL_BDIFF_APPROXIMATION",
           "difficultyConventionVerifiedForUpstreamField": false,
-          "bdiffRefinedExpectedBlocks": 0.01736010594855973,
+          "bdiffRefinedExpectedBlocks": 0.016971726814885315,
           "constantApproximationErrorPercent": 0.0015259021896696368,
           "externalInputsIndependentlyVerified": false,
           "decomposition": {
             "status": "EXPLAINED_BY_TARGET_TIME_MODEL",
             "targetBlockTimeSeconds": 600.0,
-            "impliedBlockTimeSeconds": 574.0671570340617,
-            "networkHashrateDerivedExpectedBlocks": 0.016610031228462486,
+            "impliedBlockTimeSeconds": 566.5265976784049,
+            "networkHashrateDerivedExpectedBlocks": 0.016025135606104458,
             "feedVsNetworkFormulaPercent": 0.0,
-            "networkVsDifficultyMultiplier": 0.9567785950567694,
+            "networkVsDifficultyMultiplier": 0.9442109961306748,
             "identity": "lambda_H/lambda_D = (D*2^32/H_network)/T_target",
             "impliedIntervalIsObservedBlockInterval": false,
             "independentValidation": false
@@ -461,8 +425,8 @@
           "coin": "BCH"
         }
       ],
-      "feedExpectedReturnPercent": 79.2131,
-      "conditionalDifficultyExpectedReturnPercent": 82.79150789737855,
+      "feedExpectedReturnPercent": 76.1514,
+      "conditionalDifficultyExpectedReturnPercent": 80.65082927757426,
       "conditionalEstimateIsVerifiedReturn": false,
       "conditionalAssumptions": "Quoted hashrate/duration, constant reported difficulty, existing reward field and fresh same-snapshot FX; delivery/fees and difficulty convention not independently verified."
     }
@@ -484,24 +448,24 @@
       "coin": "BCH",
       "algorithm": "SHA256ASICBOOST",
       "relayVersion": "2.9.0",
-      "uniqueChainTimestamps": 1594,
-      "networkFormulaReconciledCount": 1594,
-      "medianSignedDifferencePercent": -1.0145835,
+      "uniqueChainTimestamps": 1596,
+      "networkFormulaReconciledCount": 1596,
+      "medianSignedDifferencePercent": -1.016724,
       "minimumSignedDifferencePercent": -51.505358,
       "maximumSignedDifferencePercent": 20.411135,
-      "medianImpliedBlockTimeSeconds": 593.9124994584399,
+      "medianImpliedBlockTimeSeconds": 593.8996572055914,
       "independentEvidenceOfEdge": false
     },
     {
       "coin": "BCH",
       "algorithm": "SHA256ASICBOOST_USDT",
       "relayVersion": "2.9.0",
-      "uniqueChainTimestamps": 1594,
-      "networkFormulaReconciledCount": 1594,
-      "medianSignedDifferencePercent": -1.0145835,
+      "uniqueChainTimestamps": 1596,
+      "networkFormulaReconciledCount": 1596,
+      "medianSignedDifferencePercent": -1.016724,
       "minimumSignedDifferencePercent": -51.505358,
       "maximumSignedDifferencePercent": 20.411135,
-      "medianImpliedBlockTimeSeconds": 593.9124994584399,
+      "medianImpliedBlockTimeSeconds": 593.8996572055914,
       "independentEvidenceOfEdge": false
     },
     {
@@ -520,12 +484,12 @@
       "coin": "BTC",
       "algorithm": "SHA256ASICBOOST",
       "relayVersion": "2.9.0",
-      "uniqueChainTimestamps": 1594,
-      "networkFormulaReconciledCount": 1594,
-      "medianSignedDifferencePercent": -0.9551035,
+      "uniqueChainTimestamps": 1596,
+      "networkFormulaReconciledCount": 1596,
+      "medianSignedDifferencePercent": -0.9592655,
       "minimumSignedDifferencePercent": -16.199195,
       "maximumSignedDifferencePercent": 21.204325,
-      "medianImpliedBlockTimeSeconds": 594.2693781897191,
+      "medianImpliedBlockTimeSeconds": 594.2444046338444,
       "independentEvidenceOfEdge": false
     },
     {
@@ -544,12 +508,12 @@
       "coin": "DOGE",
       "algorithm": "SCRYPT",
       "relayVersion": "2.9.0",
-      "uniqueChainTimestamps": 1584,
-      "networkFormulaReconciledCount": 1584,
-      "medianSignedDifferencePercent": 8.381205000000001,
+      "uniqueChainTimestamps": 1586,
+      "networkFormulaReconciledCount": 1586,
+      "medianSignedDifferencePercent": 8.420602500000001,
       "minimumSignedDifferencePercent": -49.638062,
       "maximumSignedDifferencePercent": 129.531058,
-      "medianImpliedBlockTimeSeconds": 65.02872287422963,
+      "medianImpliedBlockTimeSeconds": 65.0523616290938,
       "independentEvidenceOfEdge": false
     },
     {
@@ -568,23 +532,23 @@
       "coin": "LTC",
       "algorithm": "SCRYPT",
       "relayVersion": "2.9.0",
-      "uniqueChainTimestamps": 1584,
-      "networkFormulaReconciledCount": 1584,
-      "medianSignedDifferencePercent": 0.3734695,
+      "uniqueChainTimestamps": 1586,
+      "networkFormulaReconciledCount": 1586,
+      "medianSignedDifferencePercent": 0.3410625,
       "minimumSignedDifferencePercent": -24.820591,
       "maximumSignedDifferencePercent": 33.43778,
-      "medianImpliedBlockTimeSeconds": 150.5602042359476,
+      "medianImpliedBlockTimeSeconds": 150.5115938660704,
       "independentEvidenceOfEdge": false
     }
   ],
   "marketContractsAndDependence": [
     {
       "algorithm": "EQUIHASH",
-      "observedAt": "2026-10-01T15:25:55.374833+00:00",
+      "observedAt": "2026-10-01T15:47:26.696513+00:00",
       "unitContract": {
         "status": "DISPLAY_UNITS_CONFIRMED_RAW_PRICE_UNVERIFIED",
         "source": "PUBLIC_MINING_ALGORITHMS",
-        "observedAt": "2026-10-01T15:25:55.374833+00:00",
+        "observedAt": "2026-10-01T15:47:26.696513+00:00",
         "currencyMarket": "BTC",
         "rawPriceDenominationVerified": false,
         "executableMarketPriceVerified": false,
@@ -599,7 +563,7 @@
         "priceScale": 8
       },
       "status": "OBSERVED",
-      "samplesWithVolumeIdentity": 1775,
+      "samplesWithVolumeIdentity": 1776,
       "maxAbsoluteProductVsVolumeErrorPercent": 0.0,
       "volumeEqualsPriceTimesSpeed": true,
       "volumeIsIndependentEvidence": false,
@@ -609,11 +573,11 @@
     },
     {
       "algorithm": "KHEAVYHASH",
-      "observedAt": "2026-10-01T15:25:55.374833+00:00",
+      "observedAt": "2026-10-01T15:47:26.696513+00:00",
       "unitContract": {
         "status": "DISPLAY_UNITS_CONFIRMED_RAW_PRICE_UNVERIFIED",
         "source": "PUBLIC_MINING_ALGORITHMS",
-        "observedAt": "2026-10-01T15:25:55.374833+00:00",
+        "observedAt": "2026-10-01T15:47:26.696513+00:00",
         "currencyMarket": "BTC",
         "rawPriceDenominationVerified": false,
         "executableMarketPriceVerified": false,
@@ -628,7 +592,7 @@
         "priceScale": 8
       },
       "status": "OBSERVED",
-      "samplesWithVolumeIdentity": 1775,
+      "samplesWithVolumeIdentity": 1776,
       "maxAbsoluteProductVsVolumeErrorPercent": 0.0,
       "volumeEqualsPriceTimesSpeed": true,
       "volumeIsIndependentEvidence": false,
@@ -638,11 +602,11 @@
     },
     {
       "algorithm": "SCRYPT",
-      "observedAt": "2026-10-01T15:25:55.374833+00:00",
+      "observedAt": "2026-10-01T15:47:26.696513+00:00",
       "unitContract": {
         "status": "DISPLAY_UNITS_CONFIRMED_RAW_PRICE_UNVERIFIED",
         "source": "PUBLIC_MINING_ALGORITHMS",
-        "observedAt": "2026-10-01T15:25:55.374833+00:00",
+        "observedAt": "2026-10-01T15:47:26.696513+00:00",
         "currencyMarket": "BTC",
         "rawPriceDenominationVerified": false,
         "executableMarketPriceVerified": false,
@@ -657,7 +621,7 @@
         "priceScale": 8
       },
       "status": "OBSERVED",
-      "samplesWithVolumeIdentity": 1775,
+      "samplesWithVolumeIdentity": 1776,
       "maxAbsoluteProductVsVolumeErrorPercent": 0.0,
       "volumeEqualsPriceTimesSpeed": true,
       "volumeIsIndependentEvidence": false,
@@ -667,11 +631,11 @@
     },
     {
       "algorithm": "SHA256ASICBOOST",
-      "observedAt": "2026-10-01T15:25:55.374833+00:00",
+      "observedAt": "2026-10-01T15:47:26.696513+00:00",
       "unitContract": {
         "status": "DISPLAY_UNITS_CONFIRMED_RAW_PRICE_UNVERIFIED",
         "source": "PUBLIC_MINING_ALGORITHMS",
-        "observedAt": "2026-10-01T15:25:55.374833+00:00",
+        "observedAt": "2026-10-01T15:47:26.696513+00:00",
         "currencyMarket": "BTC",
         "rawPriceDenominationVerified": false,
         "executableMarketPriceVerified": false,
@@ -686,7 +650,7 @@
         "priceScale": 8
       },
       "status": "OBSERVED",
-      "samplesWithVolumeIdentity": 1775,
+      "samplesWithVolumeIdentity": 1776,
       "maxAbsoluteProductVsVolumeErrorPercent": 0.0,
       "volumeEqualsPriceTimesSpeed": true,
       "volumeIsIndependentEvidence": false,
@@ -696,11 +660,11 @@
     },
     {
       "algorithm": "SHA256ASICBOOST_USDT",
-      "observedAt": "2026-10-01T15:25:55.374833+00:00",
+      "observedAt": "2026-10-01T15:47:26.696513+00:00",
       "unitContract": {
         "status": "DISPLAY_UNITS_CONFIRMED_RAW_PRICE_UNVERIFIED",
         "source": "PUBLIC_MINING_ALGORITHMS",
-        "observedAt": "2026-10-01T15:25:55.374833+00:00",
+        "observedAt": "2026-10-01T15:47:26.696513+00:00",
         "currencyMarket": "USDT",
         "rawPriceDenominationVerified": false,
         "executableMarketPriceVerified": false,
@@ -715,7 +679,7 @@
         "priceScale": 8
       },
       "status": "OBSERVED",
-      "samplesWithVolumeIdentity": 1775,
+      "samplesWithVolumeIdentity": 1776,
       "maxAbsoluteProductVsVolumeErrorPercent": 0.0,
       "volumeEqualsPriceTimesSpeed": true,
       "volumeIsIndependentEvidence": false,
@@ -733,9 +697,9 @@
     "No pricing-lag predictor or change to CURRENT is enabled."
   ],
   "inputSha256": {
-    "buy-feed.json": "7fde897966e25e93e7904ebbdd75995243a08ebfc0ee553f606bdf6491d974fe",
-    "calibration/radar-snapshots.jsonl": "ec5dd2bdd97d81e9d149b315f09a8ab77631fac1fb7e91732c9e65ef257bbd9d",
-    "calibration/public-market-history.jsonl": "a7f77601c05a0f8c795b5917565b2d26d0fbc136fdc26becc4ea96941edf1a06"
+    "buy-feed.json": "2fb2bfe039bdba2e1144577ac073dd27bbe0d3771730e036911a783c69ae9c0e",
+    "calibration/radar-snapshots.jsonl": "f254bd2d5cb20d1b5407de86a74fbaf27aa332477fb3f97b249ea821f2e6520b",
+    "calibration/public-market-history.jsonl": "1a540e27b78bd01cf12a34b712814ded39b7752ac6aa9df956250a4d6738a0ea"
   },
   "inputReadWarnings": {}
 }
