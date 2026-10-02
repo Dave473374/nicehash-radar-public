@@ -1,0 +1,184 @@
+name: Palladium Shadow v1 Coverage Repeat2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/palladium_shadow_repeat2_v1.py'
+      - 'scripts/evaluate_palladium_shadow_repeat2_v1.py'
+      - 'tests/test_palladium_shadow_repeat2_v1.py'
+      - 'research/palladium-shadow-repeat2-v1.json'
+      - '.github/workflows/palladium-shadow-repeat2-v1.yml'
+      - '.github/workflows/palladium-shadow-repeat2-v1-watchdog.yml'
+  pull_request:
+    paths:
+      - 'scripts/palladium_shadow_repeat2_v1.py'
+      - 'scripts/evaluate_palladium_shadow_repeat2_v1.py'
+      - 'tests/test_palladium_shadow_repeat2_v1.py'
+      - 'research/palladium-shadow-repeat2-v1.json'
+      - '.github/workflows/palladium-shadow-repeat2-v1.yml'
+      - '.github/workflows/palladium-shadow-repeat2-v1-watchdog.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('palladium-repeat2-pr-{0}', github.ref) || 'palladium-shadow-repeat2-v1-main' }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Frozen-rule repeat2 tests and repository safety guards
+        run: |
+          python3 -m unittest tests.test_palladium_shadow_repeat2_v1 -v
+          python3 -m unittest tests.test_palladium_shadow_trial tests.test_palladium_shadow_evaluation -v
+          python3 scripts/check_forbidden_admin_access.py
+          python3 scripts/check_private_api_policy.py
+          python3 scripts/test_phase0_correctness.py
+      - name: Verify deployed public NO-KV response contract
+        run: |
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, 'scripts')
+          import palladium_shadow_repeat2_v1 as repeat
+          feed=repeat.shadow_feed()
+          names=[p.get('name') for p in feed.get('packages',[]) if isinstance(p,dict)]
+          print('NO-KV SHADOW CONTRACT OK')
+          print('Palladium S present:', 'Palladium S' in names)
+          print('Palladium M present:', 'Palladium M' in names)
+          print('Package absence here is not interpreted as no opportunity.')
+          PY
+
+  collect:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Determine isolated repeat2 phase
+        id: phase
+        run: python3 scripts/palladium_shadow_repeat2_v1.py plan
+
+      - name: Collect one frozen 31-sample minute batch
+        if: steps.phase.outputs.mode == 'trial'
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/palladium-shadow-repeat2-v1"
+          rm -rf "$out"
+          python3 scripts/palladium_shadow_repeat2_v1.py collect --samples 31 --output-dir "$out"
+
+      - name: Persist repeat2 evidence before any continuation
+        if: steps.phase.outputs.mode == 'trial'
+        run: |
+          set -euo pipefail
+          git config user.name 'NiceHash Radar Bot'
+          git config user.email 'actions@github.com'
+
+          python3 scripts/palladium_shadow_repeat2_v1.py stage
+          git add calibration/palladium-shadow-repeat2-v1-public.jsonl
+          git add research/palladium-shadow-repeat2-v1-state.json
+          git add research/palladium-shadow-repeat2-v1-report.json
+          git add research/palladium-shadow-repeat2-v1-latest-economics.json
+          python3 scripts/radar_snapshot_archive.py staged-guard
+
+          if git diff --cached --quiet; then
+            echo 'No repeat2 evidence to persist'
+            exit 1
+          fi
+
+          git commit -m 'Record Palladium frozen-v1 coverage repeat2 batch (shadow only)'
+          pushed=false
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main > "$RUNNER_TEMP/repeat2-push.log" 2>&1; then
+              cat "$RUNNER_TEMP/repeat2-push.log"
+              pushed=true
+              break
+            fi
+            cat "$RUNNER_TEMP/repeat2-push.log"
+            if grep -Eq 'GH001|exceeds.*file size limit|Large files detected' "$RUNNER_TEMP/repeat2-push.log"; then
+              exit 1
+            fi
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              exit 1
+            fi
+            sleep $((attempt * 2))
+          done
+          [ "$pushed" = true ] || exit 1
+
+      - name: Recheck phase after persisted batch
+        id: post
+        if: steps.phase.outputs.mode == 'trial'
+        run: python3 scripts/palladium_shadow_repeat2_v1.py plan
+
+      - name: Dispatch immediate continuation
+        if: steps.phase.outputs.mode == 'trial' && steps.post.outputs.mode == 'trial'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/palladium-shadow-repeat2-v1.yml/dispatches" \
+            --data '{"ref":"main"}'
+          echo 'Next repeat2 batch dispatched.'
+
+      - name: Evaluate only when repeat2 is complete or suspended
+        if: (steps.phase.outputs.mode == 'complete') || (steps.phase.outputs.mode == 'suspended') || (steps.post.outputs.mode == 'complete') || (steps.post.outputs.mode == 'suspended')
+        run: python3 scripts/evaluate_palladium_shadow_repeat2_v1.py
+
+      - name: Publish final/suspended read-only evaluation
+        if: (steps.phase.outputs.mode == 'complete') || (steps.phase.outputs.mode == 'suspended') || (steps.post.outputs.mode == 'complete') || (steps.post.outputs.mode == 'suspended')
+        run: |
+          set -euo pipefail
+          git config user.name 'NiceHash Radar Bot'
+          git config user.email 'actions@github.com'
+          git add research/palladium-shadow-repeat2-v1-report.json
+          git add research/palladium-shadow-repeat2-v1-evaluation.json
+          git add research/palladium-shadow-repeat2-v1-evaluation.md
+          python3 scripts/radar_snapshot_archive.py staged-guard
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Publish final Palladium frozen-v1 coverage repeat2 evaluation'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            git fetch origin main
+            if ! git rebase origin/main; then git rebase --abort || true; exit 1; fi
+            sleep $((attempt * 2))
+          done
+          exit 1
+
+      - name: Fail closed on HTTP safety suspension
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('research/palladium-shadow-repeat2-v1-report.json')
+          if p.exists() and json.loads(p.read_text()).get('status') == 'SUSPENDED_HTTP_POLICY':
+              raise SystemExit('Repeat2 suspended by 401/403/429 safety policy')
+          PY
