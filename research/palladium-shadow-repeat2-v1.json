@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "PALLADIUM_SHADOW_V1_COVERAGE_REPEAT2_2026_10_02",
+  "role": "FORWARD_ONLY_COVERAGE_REPEAT_OF_FROZEN_V1_NOT_TRADING_VALIDATION",
+  "purpose": "Repeat the exact frozen v1 rule with a collector designed to avoid multi-hour GitHub cron gaps.",
+  "frozenProtocolPath": "research/palladium-shadow-protocol-v1.json",
+  "frozenProtocolHash": "1fcd3fcd9c45a45a86b781e7423b46a1702cc0d9c1a951beae9947af1993f3a3",
+  "frozenRuleChanged": false,
+  "packages": {
+    "Palladium S": "PRIMARY",
+    "Palladium M": "SECONDARY"
+  },
+  "source": {
+    "endpoint": "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed-shadow",
+    "requiredResponseContract": {
+      "shadow_sampling_mode": "NO_KV",
+      "shadow_history_access": "NONE",
+      "history_status": "HISTORY BYPASSED",
+      "history_saved": false,
+      "history_key": null
+    },
+    "cloudflareHistoryKvUsedBySampling": false
+  },
+  "collection": {
+    "trialHours": 72,
+    "intervalSeconds": 60,
+    "samplesPerRun": 31,
+    "targetCoveragePercent": 90,
+    "targetIsGuarantee": false,
+    "primaryContinuation": "workflow_dispatch self-chain after each persisted batch",
+    "watchdog": "hourly bounded-date watchdog dispatches only when persisted receipt is stale by at least 10 minutes",
+    "watchdogWindowUtc": "2026-10-02 through 2026-10-05",
+    "activation": "First persisted main-branch repeat2 batch; expiresAt remains startedAt + 72 hours and cannot restart or extend."
+  },
+  "storage": {
+    "history": "calibration/palladium-shadow-repeat2-v1-history.jsonl",
+    "publicHistory": "calibration/palladium-shadow-repeat2-v1-public.jsonl",
+    "state": "research/palladium-shadow-repeat2-v1-state.json",
+    "report": "research/palladium-shadow-repeat2-v1-report.json",
+    "latestEconomics": "research/palladium-shadow-repeat2-v1-latest-economics.json",
+    "evaluation": "research/palladium-shadow-repeat2-v1-evaluation.json"
+  },
+  "canRaiseSignal": false,
+  "canSendNotifications": false,
+  "automaticPurchase": false,
+  "currentProductionModelChanged": false,
+  "adminApiUsed": false,
+  "privateApiUsed": false,
+  "limitations": [
+    "Coverage is measured, not guaranteed; GitHub runner or platform outages can still create gaps.",
+    "The watchdog is recovery-only and does not modify the frozen signal rule.",
+    "The NO-KV response contract demonstrates the shadow route bypasses RADAR_HISTORY in the Worker code path; Cloudflare billing counters are not independently read here.",
+    "Conditional returns are models, not realized profit, HIT or MISS."
+  ]
+}
