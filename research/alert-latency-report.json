@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-02T07:35:05.566709+00:00",
+  "generatedAt": "2026-10-02T14:11:39.026455+00:00",
   "role": "PHONE_DELIVERY_LATENCY_RESEARCH_ONLY",
   "currentProductionModelChanged": false,
   "canRaiseBuySignal": false,
@@ -19,10 +19,10 @@
     "decisionEngine": "PROFITABILITY_AND_BREAK_EVEN_GATED_MINING_QUALITY_VS_HISTORY"
   },
   "lookbackDays": 7,
-  "resolvedWindowCount": 1,
-  "shortWindowCount": 1,
+  "resolvedWindowCount": 0,
+  "shortWindowCount": 0,
   "veryShortStrongWindowCount": 0,
-  "shortWindowRate": 1.0,
+  "shortWindowRate": 0.0,
   "thresholds": {
     "minimumResolvedWindows": 3,
     "shortWindowMaxMinutes": 45.0,
@@ -40,20 +40,7 @@
     ],
     "primaryOnly": true
   },
-  "windows": [
-    {
-      "package": "Bronze S",
-      "startAt": "2026-09-25T10:50:17.272000+00:00",
-      "lastQualifiedAt": "2026-09-25T10:50:17.272000+00:00",
-      "maxSignal": "BUY NOW",
-      "minEvPercent": 95.0141,
-      "status": "RESOLVED",
-      "closureReason": "NEXT_VALID_SNAPSHOT_NOT_QUALIFIED",
-      "endAt": "2026-09-25T10:58:03.305000+00:00",
-      "observedLowerBoundMinutes": 0.0,
-      "observedUpperBoundMinutes": 7.767
-    }
-  ],
+  "windows": [],
   "limitations": [
     "This is infrastructure evidence, not a BUY signal and not a profitability backtest.",
     "Only PRIMARY BUY NOW/STRONG BUY windows with EV >=95% and MATH PASS/N/A can trigger the recommendation.",
