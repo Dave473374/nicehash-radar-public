@@ -6,12 +6,14 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/update-buy-feed.yml'
+      - 'tests/test_buy_feed_continuation.py'
   schedule:
     - cron: "*/5 * * * *"
 
 concurrency:
   group: update-nicehash-buy-feed
-  cancel-in-progress: true
+  # A self-dispatched successor must wait, not cancel its parent.
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -19,14 +21,22 @@ permissions:
 
 jobs:
   update-feed:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Test BUY feed continuity safety
+        run: python3 -m unittest discover -s tests -p 'test_buy_feed_continuation.py' -v
 
       - name: Fetch BUY feed
-        run: curl --fail --silent --show-error "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed" -o buy-feed.json
+        run: curl --fail --silent --show-error --connect-timeout 10 --max-time 60 "https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed" -o buy-feed.json
 
       - name: Validate upstream JSON
         run: python -m json.tool buy-feed.json > /dev/null
@@ -180,19 +190,19 @@ jobs:
           exit 1
 
       - name: Schedule next BUY feed refresh
-        if: always() && github.ref == 'refs/heads/main'
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
           # GitHub schedule events are best-effort and can be delayed or dropped.
-          # Keep one bounded continuation alive so the public BUY feed does not
-          # depend solely on cron delivery. A scheduled/manual run remains a
-          # watchdog and concurrency prevents duplicate chains from building up.
+          # Continue after transient failure, but never revive a cancelled run.
+          # One running job and at most one pending successor share this group.
+          # Cron remains a watchdog; this does not guarantee a five-minute SLA.
           sleep 240
 
-          curl --fail --silent --show-error --location \
+          curl --fail --silent --show-error --location --connect-timeout 10 --max-time 30 \
             --request POST \
             --header "Accept: application/vnd.github+json" \
             --header "Authorization: Bearer $GH_TOKEN" \
