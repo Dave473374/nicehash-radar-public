@@ -1,0 +1,66 @@
+name: BUY Radar Recovery Verification
+on:
+  workflow_dispatch:
+  push:
+    branches: [recovery/buy-radar-20261005]
+    paths:
+      - '.github/workflows/buy-radar-recovery.yml'
+      - 'workers/recovery/**'
+      - 'tests/test_recovery*'
+permissions:
+  contents: read
+concurrency:
+  group: buy-radar-recovery-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            .github/workflows
+            workers/recovery
+            tests
+            scripts
+      - name: Run available offline recovery tests
+        run: |
+          if [ -f workers/recovery/build_worker.py ]; then
+            python3 workers/recovery/build_worker.py
+            node --test workers/recovery/test_history.mjs
+          fi
+          if [ -f tests/test_recovery_health.py ]; then
+            python3 -m unittest discover -s tests -p 'test_recovery_health.py' -v
+          fi
+      - name: Inspect public live history and feed once
+        run: |
+          python3 - <<'PY'
+          import datetime, json, urllib.request
+          from pathlib import Path
+          now = datetime.datetime.now(datetime.timezone.utc)
+          report = {'observed_at': now.isoformat(), 'automatic_purchase': False, 'cloudflare_deployed_by_this_workflow': False}
+          base = 'https://nicehash-easymining-relay.david-e5e.workers.dev'
+          for endpoint in ('history', 'buy-feed'):
+              try:
+                  req = urllib.request.Request(base + '/' + endpoint, headers={'Accept': 'application/json', 'User-Agent': 'BUY-Radar-Recovery-Read-Only'})
+                  with urllib.request.urlopen(req, timeout=40) as response:
+                      raw = response.read(2000000)
+                  data = json.loads(raw)
+                  Path('/tmp/recovery-' + endpoint + '.json').write_text(json.dumps(data, indent=2))
+                  keys = ('status', 'ok', 'relay_version', 'checked_at', 'snapshot_count_listed', 'list_complete', 'recent_snapshot_keys', 'history_samples_loaded', 'history_hourly_samples', 'history_coverage_hours', 'trend_engine_status', 'history_status', 'history_error')
+                  compact = {k: data[k] for k in keys if k in data}
+                  if endpoint == 'buy-feed':
+                      compact['packages'] = [{'name': p.get('name'), 'signal': p.get('final_signal'), 'samples24': (p.get('history_trend') or {}).get('sample_count_24h'), 'q24': (p.get('history_trend') or {}).get('expected_blocks_per_btc_vs_24h_percent'), 'q7': (p.get('history_trend') or {}).get('expected_blocks_per_btc_vs_7d_percent'), 'reason': p.get('final_signal_reason') or (p.get('decision') or {}).get('rationale')} for p in data.get('packages', [])]
+                  report[endpoint] = compact
+              except Exception as exc:
+                  report[endpoint] = {'access_error': str(exc)}
+          Path('/tmp/recovery-live-report.json').write_text(json.dumps(report, indent=2))
+          print(json.dumps(report, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: buy-radar-recovery-evidence
+          path: /tmp/recovery-*.json
+          retention-days: 14
