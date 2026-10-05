@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 
 ROOT = Path(".")
 SKIP_DIRS = {".git", "__pycache__", ".venv", "node_modules"}
@@ -25,6 +26,14 @@ PUBLIC_API_HOST_ALLOWLIST = {
     "fetch_recent_blocks.py",
     "scripts/collect_public_market_history.py",
     "scripts/collect_realized_blocks.py",
+}
+
+# These exact reviewed Worker builds only GET the public package endpoint.
+# Pin complete bytes rather than exempting a directory or any private-auth rule.
+# A future changed build must be reviewed and have its digest explicitly updated.
+PUBLIC_WORKER_SOURCE_DIGESTS = {
+    "workers/recovery/base-worker-v2.9.0.js": "f150fdcca108302f84362224dec88dafa25e78ec9f868bca25165a5a2d41be57",
+    "workers/recovery/worker.js": "d151375be73e45b51294dca1706a5b88dcffb70952762fe295cbe32f87d5c1f2",
 }
 
 FORBIDDEN_PRIVATE_METHOD_PATTERNS = [
@@ -66,6 +75,7 @@ for path in ROOT.rglob("*"):
         if (
             relative not in AUTH_CODE_ALLOWLIST
             and relative not in PUBLIC_API_HOST_ALLOWLIST
+            and hashlib.sha256(path.read_bytes()).hexdigest() != PUBLIC_WORKER_SOURCE_DIGESTS.get(relative)
         ):
             violations.append(
                 f"direct api2.nicehash.com host use outside approved modules: {relative}"
