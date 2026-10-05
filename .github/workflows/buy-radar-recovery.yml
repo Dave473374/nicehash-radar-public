@@ -5,10 +5,13 @@ on:
     branches: [recovery/buy-radar-20261005]
     paths:
       - '.github/workflows/buy-radar-recovery.yml'
+      - '.github/workflows/update-buy-feed.yml'
       - 'workers/recovery/**'
+      - 'scripts/recovery_health.py'
       - 'tests/test_recovery*'
+      - 'tests/test_buy_feed_continuation.py'
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: buy-radar-recovery-verification
   cancel-in-progress: false
@@ -26,15 +29,14 @@ jobs:
             tests
             scripts
             docs
-      - name: Run available offline recovery tests
+      - name: Build and run mandatory offline recovery tests
         run: |
-          if [ -f workers/recovery/build_worker.py ]; then
-            python3 workers/recovery/build_worker.py
-            node --test workers/recovery/test_history.mjs
-          fi
-          if [ -f tests/test_recovery_health.py ]; then
-            python3 -m unittest discover -s tests -p 'test_recovery_health.py' -v
-          fi
+          set -euo pipefail
+          mkdir -p /tmp/recovery-test-results
+          python3 workers/recovery/build_worker.py | tee /tmp/recovery-test-results/build.log
+          node --test workers/recovery/test_history.mjs 2>&1 | tee /tmp/recovery-test-results/node.log
+          python3 -m unittest discover -s tests -p 'test_recovery_health.py' -v 2>&1 | tee /tmp/recovery-test-results/health-alerts.log
+          python3 -m unittest discover -s tests -p 'test_buy_feed_continuation.py' -v 2>&1 | tee /tmp/recovery-test-results/pipeline.log
       - name: Inspect public live history and feed once
         run: |
           python3 - <<'PY'
@@ -45,7 +47,7 @@ jobs:
           base = 'https://nicehash-easymining-relay.david-e5e.workers.dev'
           for endpoint in ('history', 'buy-feed'):
               try:
-                  req = urllib.request.Request(base + '/' + endpoint, headers={'Accept': 'application/json', 'User-Agent': 'BUY-Radar-Recovery-Read-Only'})
+                  req = urllib.request.Request(base + '/' + endpoint, headers={'Accept': 'application/json', 'User-Agent': 'BUY-Radar-Recovery-Diagnostic'})
                   with urllib.request.urlopen(req, timeout=40) as response:
                       raw = response.read(2000000)
                   data = json.loads(raw)
@@ -60,20 +62,36 @@ jobs:
           Path('/tmp/recovery-live-report.json').write_text(json.dumps(report, indent=2))
           print(json.dumps(report, indent=2))
           PY
+      - name: Version generated deployment source on recovery branch only
+        if: github.ref == 'refs/heads/recovery/buy-radar-20261005'
+        run: |
+          set -euo pipefail
+          git config user.name "NiceHash Recovery Builder"
+          git config user.email "actions@github.com"
+          git add workers/recovery/worker.js workers/recovery/base-worker-v2.9.0.js workers/recovery/build-manifest.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "recovery: record tested Worker source and build provenance"
+          git push origin HEAD:refs/heads/recovery/buy-radar-20261005
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buy-radar-recovery-test-results
+          path: /tmp/recovery-test-results
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: buy-radar-recovery-evidence
           path: /tmp/recovery-*.json
           retention-days: 14
-      - name: Retain tracked public source for offline audit
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: buy-radar-public-code-snapshot
-          include-hidden-files: true
+          name: buy-radar-tested-worker
           path: |
-            scripts/*.py
-            tests/*.py
-            .github/workflows/*.yml
-            docs/*.md
-            buy-feed.json
+            workers/recovery/worker.js
+            workers/recovery/base-worker-v2.9.0.js
+            workers/recovery/build-manifest.json
+            workers/recovery/build_worker.py
+            workers/recovery/history-functions.js
+            workers/recovery/test_history.mjs
+            workers/recovery/base-worker-v2.9.0.js.gz
           retention-days: 14
