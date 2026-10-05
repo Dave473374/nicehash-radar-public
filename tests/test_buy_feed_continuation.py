@@ -28,24 +28,21 @@ class BuyFeedContinuationSafetyTests(unittest.TestCase):
         self.assertIn('cancel-in-progress: false', block)
         self.assertNotIn('cancel-in-progress: true', block)
 
-    def test_cancelled_run_does_not_restart_itself(self):
-        block = step(self.text, 'Schedule next BUY feed refresh')
-        self.assertIn("if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}", block)
-        self.assertNotIn('always()', block)
-        self.assertNotIn('success()', block)  # A transient failure may recover.
-        self.assertEqual(block.count('--request POST'), 1)
-        self.assertIn('sleep 240', block)
-        self.assertNotIn('--retry', block)  # No ambiguous duplicate dispatch.
+    def test_no_recursive_dispatch_or_sleep_scheduler(self):
+        self.assertNotIn('/dispatches', self.text)
+        self.assertNotIn('sleep 240', self.text)
+        self.assertNotIn('actions: write', self.text)
+        self.assertEqual(self.text.count('cron:'), 1)
 
     def test_workflow_and_http_operations_are_bounded(self):
         self.assertIn('timeout-minutes: 15', self.text)
         fetch = step(self.text, 'Fetch BUY feed')
-        dispatch = step(self.text, 'Schedule next BUY feed refresh')
-        for block in (fetch, dispatch):
-            self.assertIn('--connect-timeout 10', block)
-            self.assertIn('--max-time ', block)
+        self.assertIn('--connect-timeout 10', fetch)
         self.assertIn('--max-time 60', fetch)
-        self.assertIn('--max-time 30', dispatch)
+
+    def test_history_health_is_checked_before_shadows_are_attached(self):
+        self.assertLess(self.text.index('Annotate production history health'), self.text.index('Apply NEW calibrated shadow'))
+        self.assertIn('scripts/recovery_health.py buy-feed.json --annotate', self.text)
 
     def test_only_main_is_published_and_cron_watchdog_is_preserved(self):
         job = self.text.split('  update-feed:\n', 1)[1]
@@ -54,6 +51,21 @@ class BuyFeedContinuationSafetyTests(unittest.TestCase):
         self.assertIn('ref: main', checkout)
         self.assertIn('fetch-depth: 1', checkout)
         self.assertIn('cron: "*/5 * * * *"', self.text)
+
+    def test_degraded_feed_skips_shadow_stages_but_remains_publishable(self):
+        for name in ('Apply NEW calibrated shadow', 'Apply EDGE shadow audit', 'Apply math consistency audit'):
+            self.assertIn("if: steps.health.outputs.ready == 'true'", step(self.text, name))
+        block = step(self.text, 'Validate final JSON')
+        code = textwrap.dedent(block.split('        run: |\n', 1)[1])
+        feed = {'ok':False,'status':'BUY FEED WARNING',
+                'production_health':{'signal_engine_ready':False,'reasons':['HISTORY_UNAVAILABLE']},
+                'packages':[{'name':'Palladium S','final_signal':'WAIT'}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, 'buy-feed.json').write_text(json.dumps(feed))
+            result = subprocess.run(['bash','-e','-o','pipefail','-c',code],cwd=tmp,
+                                    text=True,capture_output=True,timeout=10)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('DEGRADED HEALTH PUBLISHED',result.stdout)
 
     def run_guard(self, overrides=None, raw=None):
         block = step(self.text, 'Reject stale or unhealthy BUY feed')
