@@ -25,6 +25,7 @@ jobs:
             workers/recovery
             tests
             scripts
+            docs
       - name: Run available offline recovery tests
         run: |
           if [ -f workers/recovery/build_worker.py ]; then
@@ -63,4 +64,16 @@ jobs:
         with:
           name: buy-radar-recovery-evidence
           path: /tmp/recovery-*.json
+          retention-days: 14
+      - name: Retain tracked public source for offline audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: buy-radar-public-code-snapshot
+          include-hidden-files: true
+          path: |
+            scripts/*.py
+            tests/*.py
+            .github/workflows/*.yml
+            docs/*.md
+            buy-feed.json
           retention-days: 14
