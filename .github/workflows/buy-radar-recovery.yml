@@ -7,7 +7,6 @@ on:
     paths:
       - '.github/workflows/buy-radar-recovery.yml'
       - '.github/workflows/update-buy-feed.yml'
-      - 'workers/recovery/**'
       - 'scripts/recovery_health.py'
       - 'tests/test_recovery*'
       - 'tests/test_buy_feed_continuation.py'
@@ -64,7 +63,7 @@ jobs:
           print(json.dumps(report, indent=2))
           PY
       - name: Version generated deployment source on recovery branch only
-        if: github.ref == 'refs/heads/recovery/buy-radar-20261005'
+        if: false # read-only recovery verification; do not create an implicit refresh loop
         run: |
           set -euo pipefail
           git config user.name "NiceHash Recovery Builder"
