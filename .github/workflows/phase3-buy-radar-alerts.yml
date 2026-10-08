@@ -31,10 +31,29 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Check decision readiness before alerting
+        id: readiness
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from scripts.recovery_health import assess
+          feed = json.loads(Path("buy-feed.json").read_text())
+          health = assess(feed)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("ready=" + str(health["signal_engine_ready"]).lower() + "\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:
+              output.write("Decision engine: **" + health["state"] + "**\n\n")
+              output.write("Alerts are skipped without mutating dedupe while data is not ready.\n" if not health["signal_engine_ready"] else "Ready for existing alert rules.\n")
+          print(json.dumps(health, indent=2))
+          PY
+
       - name: Build alert events
+        if: steps.readiness.outputs.ready == 'true'
         run: python3 scripts/build_alert_events.py
 
       - name: Emit actionable GitHub notices
+        if: steps.readiness.outputs.ready == 'true'
         run: |
           python3 - <<'PY'
           import json
@@ -169,6 +188,7 @@ jobs:
           PY
 
       - name: Persist alert state and history
+        if: steps.readiness.outputs.ready == 'true'
         run: |
           git config user.name "NiceHash Radar Bot"
           git config user.email "actions@github.com"

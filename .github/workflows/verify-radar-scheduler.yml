@@ -1,0 +1,74 @@
+name: Verify BUY Radar Scheduled Collector
+on:
+  workflow_dispatch:
+  push:
+    branches: [recovery/buy-radar-scheduler-20261008]
+    paths:
+      - '.github/workflows/verify-radar-scheduler.yml'
+      - 'workers/recovery/build_scheduled.py'
+      - 'workers/recovery/scheduler-runtime.js'
+      - 'workers/recovery/scheduled-math.js'
+      - 'workers/recovery/test_scheduled.mjs'
+      - 'scripts/recovery_health.py'
+      - 'tests/test_scheduler_transport.py'
+  pull_request:
+    paths:
+      - 'workers/recovery/**'
+      - 'scripts/recovery_health.py'
+      - '.github/workflows/update-buy-feed.yml'
+      - '.github/workflows/phase3-buy-radar-alerts.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install requests
+      - name: Deterministic build and scheduler regression
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/scheduler-tests
+          python3 workers/recovery/build_scheduled.py | tee /tmp/scheduler-tests/build.log
+          node --test workers/recovery/test_scheduled.mjs > /tmp/scheduler-tests/node.log 2>&1
+          tail -12 /tmp/scheduler-tests/node.log
+          rm workers/recovery/worker-scheduled.mjs
+      - name: Existing regression suite and private access guards
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -v > /tmp/scheduler-tests/python.log 2>&1
+          tail -8 /tmp/scheduler-tests/python.log
+          python3 scripts/test_phase0_correctness.py | tee /tmp/scheduler-tests/phase0.log
+          python3 scripts/check_forbidden_admin_access.py
+          python3 scripts/check_private_api_policy.py
+      - name: Record deterministic deployable source on repair branch only
+        if: github.event_name == 'push' && github.ref == 'refs/heads/recovery/buy-radar-scheduler-20261008'
+        run: |
+          set -euo pipefail
+          git config user.name 'NiceHash Recovery Builder'
+          git config user.email 'actions@github.com'
+          git add workers/recovery/worker-scheduled.js workers/recovery/scheduled-build-manifest.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Record tested scheduled Worker and deterministic build manifest'
+          git push origin HEAD:recovery/buy-radar-scheduler-20261008
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: buy-radar-scheduler-tests
+          path: /tmp/scheduler-tests
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: buy-radar-scheduler-worker
+          path: |
+            workers/recovery/worker-scheduled.js
+            workers/recovery/scheduled-build-manifest.json
+          retention-days: 14
