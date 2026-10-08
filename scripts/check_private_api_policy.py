@@ -34,6 +34,7 @@ PUBLIC_API_HOST_ALLOWLIST = {
 PUBLIC_WORKER_SOURCE_DIGESTS = {
     "workers/recovery/base-worker-v2.9.0.js": "f150fdcca108302f84362224dec88dafa25e78ec9f868bca25165a5a2d41be57",
     "workers/recovery/worker.js": "d151375be73e45b51294dca1706a5b88dcffb70952762fe295cbe32f87d5c1f2",
+    "workers/recovery/worker-scheduled.js": "b1f83880e7370b223e109efc72982b48892cca62099ca74a57ee046ef5f9ee79",
 }
 
 FORBIDDEN_PRIVATE_METHOD_PATTERNS = [
