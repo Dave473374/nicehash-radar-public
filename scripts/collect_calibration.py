@@ -78,8 +78,9 @@ def existing_feed_hashes():
     return hashes
 
 
-def collect_snapshot(source_file=SOURCE_FILE, *, now=None, skip_unavailable=False,
+def collect_snapshot(source_file=None, *, now=None, skip_unavailable=False,
                      source_kind="LIVE_WORKFLOW"):
+    source_file = SOURCE_FILE if source_file is None else source_file
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("Collection time must be timezone-aware")
@@ -96,12 +97,31 @@ def collect_snapshot(source_file=SOURCE_FILE, *, now=None, skip_unavailable=Fals
         if isinstance(feed, dict):
             result["sourceCheckedAt"] = feed.get("checked_at") if isinstance(feed.get("checked_at"), str) else None
             result["sourceStatus"] = feed.get("status") if isinstance(feed.get("status"), str) else None
-        validate_feed(feed, now)
         feed_hash = canonical_feed_sha256(feed)  # Reject NaN/Infinity too.
     except (OSError, UnicodeError, ValueError, AssertionError) as exc:
         if not skip_unavailable:
             raise
         result.update(status="CURRENT_INPUT_SKIPPED", reason=str(exc))
+        return result
+
+    # Preserve the existing no-op contract for an already archived feed, even
+    # after it becomes stale. This does not create a new or eligible observation.
+    validation_error = None
+    try:
+        validate_feed(feed, now)
+    except AssertionError as exc:
+        validation_error = exc
+    base_history_sha = history_digest(OUTPUT_FILE) if history_exists(OUTPUT_FILE) else None
+    if feed_hash in existing_feed_hashes():
+        result.update(status="SNAPSHOT_ALREADY_PRESENT", feedSha256=feed_hash,
+                      sourceEligible=validation_error is None)
+        if validation_error is not None:
+            result["reason"] = str(validation_error)
+        return result
+    if validation_error is not None:
+        if not skip_unavailable:
+            raise validation_error
+        result.update(status="CURRENT_INPUT_SKIPPED", reason=str(validation_error))
         return result
 
     health = feed.get("production_health")
@@ -112,10 +132,6 @@ def collect_snapshot(source_file=SOURCE_FILE, *, now=None, skip_unavailable=Fals
         collectorReceipt=feed.get("collector"), historySaved=feed.get("history_saved"),
         historyHourlySamples=feed.get("history_hourly_samples"),
     )
-    base_history_sha = history_digest(OUTPUT_FILE) if history_exists(OUTPUT_FILE) else None
-    if feed_hash in existing_feed_hashes():
-        result.update(status="SNAPSHOT_ALREADY_PRESENT", feedSha256=feed_hash)
-        return result
     snapshot = {
         "collected_at": now.isoformat(), "source": source_kind,
         "source_commit": os.getenv("GITHUB_SHA"), "feed_sha256": feed_hash,
@@ -143,6 +159,8 @@ def main(argv=None):
         args.status_file.parent.mkdir(parents=True, exist_ok=True)
         args.status_file.write_text(encoded, encoding="utf-8")
     print(encoded, end="")
+    if result["status"] == "SNAPSHOT_ALREADY_PRESENT":
+        print("Calibration snapshot already present for current feed")
     if not result["sourceEligible"]:
         print("::warning::Current feed unavailable; valid Git-history backfill is retained. See collection status.")
     return 0

@@ -212,7 +212,8 @@ class WorkflowSafetyTests(unittest.TestCase):
         self.assertNotIn('continue-on-error:', text)
         self.assertNotIn('curl -L', text)
         self.assertNotIn('--location', text)
-        self.assertNotIn('api2.nicehash.com', text)
+        self.assertEqual(text.count('https://'), 1)
+        self.assertIn("'https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed'", text)
         self.assertNotIn('secrets.', text)
 
 
