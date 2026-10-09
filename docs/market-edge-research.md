@@ -11,8 +11,10 @@ or cancellations. Existing public collectors are reused, not duplicated.
 A separate workflow updates `research/market-edge-report.json` and
 `research/market-edge-pairs.jsonl` nominally twice hourly. This research schedule
 is not the quote-collection frequency or a phone notification system. Failed
-research cannot stop the production BUY feed. Check `generatedAt` before using
-any report; a failed update leaves the previous output in place.
+research cannot stop the production BUY feed. Check both `generatedAt` AND
+per-package `latestQuoteAt` / `latestQuoteAgeMinutes`: regenerating a report
+with an old archive does not make its inputs fresh. A failed update leaves the
+previous output in place.
 
 ## What is measured
 
@@ -99,3 +101,18 @@ The tests are synthetic and offline; they validate implementation boundaries,
 not profitability. `--now` permits a reproducible aware UTC cutoff.
 Source hashes in the report identify the input files and are checked again after
 analysis. Output paths may not alias any source path.
+
+## Archive recovery and source freshness
+
+See `docs/radar-archive-collection-recovery-20261009.md` for the observed
+current-input failure that prevented valid Git backfill from being persisted.
+The existing collector now records source eligibility separately in
+`research/radar-collection-status.json`; an archive job may preserve valid
+historical records while explicitly skipping a bad current source.
+
+A `SCHEDULED_RELAY_READ` snapshot keeps the original Worker `checked_at`, records
+its consumer receipt as `collected_at`, and passes through the unchanged causal
+quote filters above. Do not combine relay versions or fill unobserved intervals.
+A newer archive alone does not prove a usable market pair, a mature baseline,
+real-time phone delivery or an advantage over random timing. Inspect those
+separately; public HIT-only records are not completed MISS tickets.
