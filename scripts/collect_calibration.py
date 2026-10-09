@@ -1,7 +1,13 @@
+"""Append eligible observations without discarding a successful Git backfill.
+
+The existing workflow may explicitly skip an unavailable CURRENT source. Archive
+integrity/write failures remain fatal. No network requests or decision changes.
+"""
 try:
     from radar_snapshot_archive import history_exists, read_history_text, append_history, history_digest
 except ModuleNotFoundError:  # Also support package/spec imports from repository root.
     from scripts.radar_snapshot_archive import history_exists, read_history_text, append_history, history_digest
+import argparse
 import hashlib
 import json
 import os
@@ -11,8 +17,6 @@ from pathlib import Path
 SOURCE_FILE = Path("buy-feed.json")
 OUTPUT_DIR = Path("calibration")
 OUTPUT_FILE = OUTPUT_DIR / "radar-snapshots.jsonl"
-
-
 MAX_LIVE_FEED_AGE_SECONDS = 15 * 60
 
 
@@ -30,7 +34,6 @@ def validate_feed(feed, now=None):
             errors.append("Feed source time is future-dated or older than 15 minutes")
     except (TypeError, ValueError, OverflowError):
         errors.append("Missing or invalid timezone-aware checked_at")
-
     if feed.get("status") != "BUY FEED OK":
         errors.append(f"Bad status: {feed.get('status')}")
     if feed.get("ok") is not True:
@@ -44,74 +47,124 @@ def validate_feed(feed, now=None):
     if (not isinstance(feed.get("packages"), list) or not feed.get("packages")
             or any(not isinstance(p, dict) for p in feed["packages"])):
         errors.append("packages missing or empty")
-
     if errors:
         raise AssertionError("; ".join(errors))
 
 
 def canonical_feed_sha256(feed):
-    payload = json.dumps(
-        feed,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
+    payload = json.dumps(feed, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False, allow_nan=False).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
 def existing_feed_hashes():
     hashes = set()
-
     if not history_exists(OUTPUT_FILE):
         return hashes
-
     for line in read_history_text(OUTPUT_FILE, encoding="utf-8").splitlines():
         if not line.strip():
             continue
-
         try:
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
-
         saved_hash = row.get("feed_sha256")
         if saved_hash:
             hashes.add(str(saved_hash))
             continue
-
         historical_feed = row.get("feed")
         if isinstance(historical_feed, dict):
             hashes.add(canonical_feed_sha256(historical_feed))
-
     return hashes
 
 
-feed = json.loads(SOURCE_FILE.read_text(encoding="utf-8"))
-collected_at = datetime.now(timezone.utc)
-feed_hash = canonical_feed_sha256(feed)
+def collect_snapshot(source_file=None, *, now=None, skip_unavailable=False,
+                     source_kind="LIVE_WORKFLOW"):
+    source_file = SOURCE_FILE if source_file is None else source_file
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("Collection time must be timezone-aware")
+    result = {
+        "schemaVersion": 1, "role": "RADAR_ARCHIVE_COLLECTION_STATUS",
+        "checkedAt": now.isoformat(), "sourceKind": source_kind,
+        "sourceCheckedAt": None, "sourceStatus": None, "sourceEligible": False,
+        "snapshotAppended": False, "automaticPurchase": False, "canRaiseSignal": False,
+    }
+    # Only source acquisition/validation errors may be skipped. In particular,
+    # no archive reads/writes are inside this exception handler.
+    try:
+        feed = json.loads(Path(source_file).read_text(encoding="utf-8"))
+        if isinstance(feed, dict):
+            result["sourceCheckedAt"] = feed.get("checked_at") if isinstance(feed.get("checked_at"), str) else None
+            result["sourceStatus"] = feed.get("status") if isinstance(feed.get("status"), str) else None
+        feed_hash = canonical_feed_sha256(feed)  # Reject NaN/Infinity too.
+    except (OSError, UnicodeError, ValueError, AssertionError) as exc:
+        if not skip_unavailable:
+            raise
+        result.update(status="CURRENT_INPUT_SKIPPED", reason=str(exc))
+        return result
 
-base_history_sha = history_digest(OUTPUT_FILE) if history_exists(OUTPUT_FILE) else None
-if feed_hash in existing_feed_hashes():
-    print("Calibration snapshot already present for current feed")
-    print("Relay version:", feed.get("relay_version"))
-    raise SystemExit(0)
+    # Preserve the existing no-op contract for an already archived feed, even
+    # after it becomes stale. This does not create a new or eligible observation.
+    validation_error = None
+    try:
+        validate_feed(feed, now)
+    except AssertionError as exc:
+        validation_error = exc
+    base_history_sha = history_digest(OUTPUT_FILE) if history_exists(OUTPUT_FILE) else None
+    if feed_hash in existing_feed_hashes():
+        result.update(status="SNAPSHOT_ALREADY_PRESENT", feedSha256=feed_hash,
+                      sourceEligible=validation_error is None)
+        if validation_error is not None:
+            result["reason"] = str(validation_error)
+        return result
+    if validation_error is not None:
+        if not skip_unavailable:
+            raise validation_error
+        result.update(status="CURRENT_INPUT_SKIPPED", reason=str(validation_error))
+        return result
 
-validate_feed(feed, collected_at)
+    health = feed.get("production_health")
+    result.update(
+        sourceEligible=True, relayVersion=feed.get("relay_version"),
+        sourceRevision=feed.get("source_revision"), packageCount=len(feed["packages"]),
+        productionHealthState=health.get("state") if isinstance(health, dict) else None,
+        collectorReceipt=feed.get("collector"), historySaved=feed.get("history_saved"),
+        historyHourlySamples=feed.get("history_hourly_samples"),
+    )
+    snapshot = {
+        "collected_at": now.isoformat(), "source": source_kind,
+        "source_commit": os.getenv("GITHUB_SHA"), "feed_sha256": feed_hash,
+        "feed_generated_at": feed["checked_at"], "relay_version": feed.get("relay_version"),
+        "decision_engine": feed.get("decision_engine"), "feed": feed,
+    }
+    append_history(OUTPUT_FILE, [snapshot], expected_sha256=base_history_sha)
+    result.update(status="SNAPSHOT_APPENDED", snapshotAppended=True, feedSha256=feed_hash)
+    return result
 
-snapshot = {
-    "collected_at": collected_at.isoformat(),
-    "source": "LIVE_WORKFLOW",
-    "source_commit": os.getenv("GITHUB_SHA"),
-    "feed_sha256": feed_hash,
-    "feed_generated_at": feed["checked_at"],
-    "relay_version": feed.get("relay_version"),
-    "decision_engine": feed.get("decision_engine"),
-    "feed": feed,
-}
 
-append_history(OUTPUT_FILE, [snapshot], expected_sha256=base_history_sha)
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", type=Path, default=SOURCE_FILE)
+    parser.add_argument("--source-kind", choices=("LIVE_WORKFLOW", "SCHEDULED_RELAY_READ"),
+                        default="LIVE_WORKFLOW")
+    parser.add_argument("--skip-unavailable", action="store_true",
+                        help="Skip invalid current input, not archive corruption/write errors")
+    parser.add_argument("--status-file", type=Path)
+    args = parser.parse_args(argv)
+    result = collect_snapshot(args.source, skip_unavailable=args.skip_unavailable,
+                              source_kind=args.source_kind)
+    encoded = json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+    if args.status_file:
+        args.status_file.parent.mkdir(parents=True, exist_ok=True)
+        args.status_file.write_text(encoded, encoding="utf-8")
+    print(encoded, end="")
+    if result["status"] == "SNAPSHOT_ALREADY_PRESENT":
+        print("Calibration snapshot already present for current feed")
+    if not result["sourceEligible"]:
+        print("::warning::Current feed unavailable; valid Git-history backfill is retained. See collection status.")
+    return 0
 
-print("Calibration snapshot created successfully")
-print("Relay version:", feed.get("relay_version"))
-print("Source commit:", snapshot["source_commit"] or "UNKNOWN")
+
+if __name__ == "__main__":
+    raise SystemExit(main())

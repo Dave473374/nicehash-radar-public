@@ -79,9 +79,12 @@ def load_existing():
             if isinstance(historical_feed, dict):
                 feed_hashes.add(canonical_feed_sha256(historical_feed))
 
-        ts = parse_ts(row.get("collected_at"))
-        if ts is not None and (latest is None or ts > latest):
-            latest = ts
+        # A later live receipt is NOT a watermark for Git commits. Otherwise a
+        # commit published after checkout but before that receipt is never seen.
+        if row.get("source") == "GIT_BUY_FEED_HISTORY":
+            ts = parse_ts(row.get("collected_at"))
+            if ts is not None and (latest is None or ts > latest):
+                latest = ts
 
     return commits, feed_hashes, latest
 
@@ -189,7 +192,7 @@ if added:
     append_history(OUTPUT_FILE, added, expected_sha256=base_history_sha)
 
 print("RADAR SNAPSHOT BACKFILL")
-print("Latest existing snapshot:", latest_existing.isoformat() if latest_existing else "NONE")
+print("Latest archived Git snapshot:", latest_existing.isoformat() if latest_existing else "NONE")
 print("Candidate buy-feed commits:", len(candidates))
 print("Added snapshots:", len(added))
 print("Skipped existing:", skipped_existing)
