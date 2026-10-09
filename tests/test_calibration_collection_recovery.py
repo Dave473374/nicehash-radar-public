@@ -177,6 +177,30 @@ class CollectionRecoveryTests(unittest.TestCase):
         self.assertEqual(len(self.rows()), 1)
 
 
+    def test_new_live_receipt_cannot_skip_unseen_older_git_commit(self):
+        def git(*args):
+            env = {**os.environ, 'GIT_AUTHOR_DATE': '2026-10-09T18:58:00Z',
+                   'GIT_COMMITTER_DATE': '2026-10-09T18:58:00Z'}
+            return subprocess.run(['git', '-C', str(self.root), *args], env=env,
+                                  check=True, capture_output=True, text=True)
+        git('init', '-q')
+        git('config', 'user.name', 'Offline regression')
+        git('config', 'user.email', 'test@localhost')
+        old_feed = {**self.feed, 'checked_at': '2026-10-09T18:57:30+00:00'}
+        (self.root / 'buy-feed.json').write_text(json.dumps(old_feed))
+        git('add', 'buy-feed.json')
+        git('commit', '-qm', 'Quote published before a newer live receipt')
+        commit = git('rev-parse', 'HEAD').stdout.strip()
+        self.collect(source_kind='SCHEDULED_RELAY_READ')
+        subprocess.run([sys.executable, str(ROOT / 'scripts/backfill_radar_snapshots.py')],
+                       cwd=self.root, check=True, capture_output=True, text=True)
+        self.assertEqual(len(self.rows()), 2)
+        recovered = next(r for r in self.rows() if r['source'] == 'GIT_BUY_FEED_HISTORY')
+        self.assertEqual(recovered['source_commit'], commit)
+        self.assertEqual(recovered['collected_at'], '2026-10-09T18:58:00+00:00')
+        self.assertEqual(recovered['feed']['checked_at'], old_feed['checked_at'])
+
+
 class WorkflowSafetyTests(unittest.TestCase):
     def test_existing_schedule_and_single_producer_are_preserved(self):
         text = (ROOT / '.github/workflows/collect-calibration.yml').read_text()

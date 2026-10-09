@@ -12,8 +12,10 @@ report continued to use input quotes no newer than 5 October.
 ## Minimal recovery
 
 The existing calibration workflow and its `7,37 * * * *` schedule remain.
-Git backfill and the lossless archive implementation are unchanged. After
-backfill, the same workflow reads the existing Cloudflare scheduled `/buy-feed`
+The lossless archive implementation is unchanged. The existing Git backfill
+now takes its watermark from archived Git receipts, never from a newer live
+receipt that could hide an unseen intermediate commit. After backfill, the
+same workflow reads the existing Cloudflare scheduled `/buy-feed`
 result to a temporary file. It is a public, bounded, no-redirect HTTP read, not
 a NiceHash upstream acquisition, second producer or new Worker. It does not
 overwrite the production `buy-feed.json`, use private APIs or alter Cron.
