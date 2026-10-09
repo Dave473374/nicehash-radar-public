@@ -94,8 +94,8 @@ def collect_snapshot(source_file=SOURCE_FILE, *, now=None, skip_unavailable=Fals
     try:
         feed = json.loads(Path(source_file).read_text(encoding="utf-8"))
         if isinstance(feed, dict):
-            result["sourceCheckedAt"] = feed.get("checked_at")
-            result["sourceStatus"] = feed.get("status")
+            result["sourceCheckedAt"] = feed.get("checked_at") if isinstance(feed.get("checked_at"), str) else None
+            result["sourceStatus"] = feed.get("status") if isinstance(feed.get("status"), str) else None
         validate_feed(feed, now)
         feed_hash = canonical_feed_sha256(feed)  # Reject NaN/Infinity too.
     except (OSError, UnicodeError, ValueError, AssertionError) as exc:
@@ -104,7 +104,14 @@ def collect_snapshot(source_file=SOURCE_FILE, *, now=None, skip_unavailable=Fals
         result.update(status="CURRENT_INPUT_SKIPPED", reason=str(exc))
         return result
 
-    result["sourceEligible"] = True
+    health = feed.get("production_health")
+    result.update(
+        sourceEligible=True, relayVersion=feed.get("relay_version"),
+        sourceRevision=feed.get("source_revision"), packageCount=len(feed["packages"]),
+        productionHealthState=health.get("state") if isinstance(health, dict) else None,
+        collectorReceipt=feed.get("collector"), historySaved=feed.get("history_saved"),
+        historyHourlySamples=feed.get("history_hourly_samples"),
+    )
     base_history_sha = history_digest(OUTPUT_FILE) if history_exists(OUTPUT_FILE) else None
     if feed_hash in existing_feed_hashes():
         result.update(status="SNAPSHOT_ALREADY_PRESENT", feedSha256=feed_hash)
