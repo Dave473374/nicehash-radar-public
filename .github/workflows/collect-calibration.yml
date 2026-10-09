@@ -11,6 +11,7 @@ on:
       - 'scripts/backfill_radar_snapshots.py'
       - 'scripts/collect_calibration.py'
       - '.github/workflows/collect-calibration.yml'
+      - 'tests/test_calibration_collection_recovery.py'
   pull_request:
     paths:
       - 'scripts/radar_snapshot_archive.py'
@@ -18,6 +19,7 @@ on:
       - 'scripts/collect_calibration.py'
       - '.github/workflows/collect-calibration.yml'
       - 'tests/test_radar_snapshot_archive.py'
+      - 'tests/test_calibration_collection_recovery.py'
 
 permissions:
   contents: read
@@ -39,7 +41,7 @@ jobs:
           python-version: '3.12'
       - name: Test archive, readers and existing correctness (offline)
         run: |
-          python3 -m unittest tests.test_radar_snapshot_archive tests.test_reward_context_integrity -v
+          python3 -m unittest tests.test_radar_snapshot_archive tests.test_reward_context_integrity tests.test_calibration_collection_recovery -v
           python3 scripts/check_forbidden_admin_access.py
           python3 scripts/check_private_api_policy.py
           python3 scripts/test_phase0_correctness.py
@@ -63,17 +65,41 @@ jobs:
         run: python3 scripts/radar_snapshot_archive.py migrate
       - name: Backfill missing Radar snapshots from buy-feed history
         run: python3 scripts/backfill_radar_snapshots.py
-      - name: Create current calibration snapshot
-        run: python3 scripts/collect_calibration.py
+      - name: Read existing scheduled Worker result (no upstream collection)
+        run: |
+          # One public read-only consumer of the existing Cloudflare producer.
+          # Never overwrite the production mirror or substitute a stale fallback.
+          source="$RUNNER_TEMP/radar-calibration-feed.json"
+          rm -f "$source" "$source.part"
+          if curl --fail --silent --show-error --proto '=https' --connect-timeout 10 --max-time 60 \
+            'https://nicehash-easymining-relay.david-e5e.workers.dev/buy-feed' -o "$source.part"; then
+            mv "$source.part" "$source"
+          else
+            rm -f "$source.part"
+            echo '::warning::Scheduled Worker read failed; retaining verified historical backfill.'
+          fi
+      - name: Create current calibration snapshot or record explicit unavailability
+        run: |
+          python3 scripts/collect_calibration.py \
+            --source "$RUNNER_TEMP/radar-calibration-feed.json" \
+            --source-kind SCHEDULED_RELAY_READ --skip-unavailable \
+            --status-file research/radar-collection-status.json
       - name: Verify complete logical history and original-byte preservation
         run: |
           mkdir -p research
           python3 scripts/radar_snapshot_archive.py verify > research/radar-archive-status.json
           cat research/radar-archive-status.json
+          {
+            echo '## Archive collection (not a BUY or ROI validation)'
+            echo '```json'
+            cat research/radar-collection-status.json
+            cat research/radar-archive-status.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Stage bounded manifest-referenced files only
         run: |
           python3 scripts/radar_snapshot_archive.py stage
-          git add research/radar-archive-status.json
+          git add research/radar-archive-status.json research/radar-collection-status.json
           python3 scripts/radar_snapshot_archive.py staged-guard
       - name: Persist archive with safe push-race recovery
         run: |
