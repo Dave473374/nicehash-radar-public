@@ -1,0 +1,34 @@
+name: BUY Radar Core Rebuild Tests
+on:
+  push:
+    branches: ['rebuild/core-20261014']
+    paths: ['workers/core/**', '.github/workflows/buy-radar-core-tests.yml']
+  pull_request:
+    paths: ['workers/core/**', '.github/workflows/buy-radar-core-tests.yml']
+permissions:
+  contents: read
+concurrency:
+  group: core-rebuild-tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test replacement policy, coordinator and outbox with synthetic I/O
+        run: node --test workers/core/test_core.mjs
+      - name: Assemble from pinned existing engine and mining math
+        run: python3 workers/core/build.py
+      - name: Check actual engine integration with synthetic network failure
+        run: node --test workers/core/test_engine.mjs
+      - name: Run existing scheduler regressions unchanged
+        run: |
+          python3 workers/recovery/build_scheduled.py
+          node --test workers/recovery/test_scheduled.mjs
+      - name: Record explicit non-deployment status
+        run: |
+          echo 'Offline tests only. No deployment, Cron activation, provider call or device receipt.' >> "$GITHUB_STEP_SUMMARY"
