@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-07T20:35:12.492792+00:00",
+  "generatedAt": "2026-11-08T00:02:08.159490+00:00",
   "role": "VERIFIED_HIT_MARKET_CONTEXT_RESEARCH_ONLY",
   "currentProductionModelChanged": false,
   "canRaiseSignal": false,
@@ -10,15 +10,18 @@
   "networkRequestsMade": 0,
   "entryTimeEligible": false,
   "canSupplyMissDenominator": false,
-  "verifiedHitCount": 1774,
-  "freshExactMarketMatchCount": 0,
+  "verifiedHitCount": 1784,
+  "freshExactMarketMatchCount": 1,
   "marketContextStatusCounts": {
-    "STALE_EXACT_PACKAGE_QUOTE": 542,
+    "MATCHED_FRESH_EXACT_PACKAGE": 1,
+    "STALE_EXACT_PACKAGE_QUOTE": 551,
     "EXACT_PACKAGE_QUOTE_NO_VALID_MARKET_PAIR": 22,
     "NO_CAUSAL_EXACT_PACKAGE_QUOTE": 734,
     "NO_EXACT_PACKAGE_SERIES": 476
   },
-  "signalAtFreshHitContextCounts": {},
+  "signalAtFreshHitContextCounts": {
+    "WAIT": 1
+  },
   "lagContextCounts": {},
   "preHitWindowSummary": {},
   "byCoin": {
@@ -29,10 +32,11 @@
       "verifiedHits": 5
     },
     "DOGE": {
-      "verifiedHits": 545
+      "verifiedHits": 550,
+      "freshExactMarketMatches": 1
     },
     "KAS": {
-      "verifiedHits": 1112
+      "verifiedHits": 1117
     },
     "ZEC": {
       "verifiedHits": 8
@@ -58,7 +62,8 @@
       "verifiedHits": 127
     },
     "Palladium M": {
-      "verifiedHits": 258
+      "verifiedHits": 263,
+      "freshExactMarketMatches": 1
     },
     "Palladium S": {
       "verifiedHits": 53
@@ -94,7 +99,7 @@
       "verifiedHits": 289
     },
     "Titanium S": {
-      "verifiedHits": 636
+      "verifiedHits": 641
     }
   },
   "settings": {
@@ -122,18 +127,20 @@
     "Pre-HIT windows are success-only descriptive trajectories; without matched MISS/control entry states they are not predictive evidence."
   ],
   "counts": {
-    "nonVerifiedLedgerRowsSkipped": 673,
+    "nonVerifiedLedgerRowsSkipped": 679,
     "PRE_HIT_NO_CAUSAL_PAIRED_EXACT_PACKAGE_QUOTES": 1324,
     "NO_EXACT_PACKAGE_SERIES": 476,
     "NO_CAUSAL_EXACT_PACKAGE_QUOTE": 734,
-    "PRE_HIT_NO_FRESH_PAIRED_ENDPOINT": 450,
-    "STALE_EXACT_PACKAGE_QUOTE": 542,
-    "EXACT_PACKAGE_QUOTE_NO_VALID_MARKET_PAIR": 22
+    "PRE_HIT_NO_FRESH_PAIRED_ENDPOINT": 459,
+    "STALE_EXACT_PACKAGE_QUOTE": 551,
+    "EXACT_PACKAGE_QUOTE_NO_VALID_MARKET_PAIR": 22,
+    "PRE_HIT_NO_MATCHED_WINDOWS": 1,
+    "MATCHED_FRESH_EXACT_PACKAGE": 1
   },
   "inputReadWarnings": {},
   "inputSha256": {
-    "research/onchain-hit-verification.jsonl": "caebb1a1eba365aebe62e20a31083131ddeaea93caaa96f181e29b9b79d49650",
-    "research/market-edge-pairs.jsonl": "564b8f75fd499a07d35ce14a3493b976195e96ae0db5db487bef58d40dc66a1c",
+    "research/onchain-hit-verification.jsonl": "0a24d8683e69cb6cbd2c116aa4a202b0479a9db709960f3bb18cbb5210214262",
+    "research/market-edge-pairs.jsonl": "f198dd9ea193d39ed9a3016241594b0d0d1070a99d83b28e7c81a455a3b43dc1",
     "research/lag-episodes.jsonl": "446577d27744c4355350f5fa7d9d0e909be7fd2b7fb6ebb25c74a2500d9bd845"
   }
 }
