@@ -1,0 +1,44 @@
+name: BUY Radar Core Read-Only Preflight
+on:
+  workflow_dispatch:
+  push:
+    branches: ['rebuild/core-20261014']
+    paths: ['workers/core/preflight.py','workers/core/inspect_live.mjs','.github/workflows/buy-radar-core-preflight.yml']
+permissions:
+  contents: read
+concurrency:
+  group: buy-radar-core-read-only-preflight
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: github.repository == 'Dave473374/nicehash-radar-public' && github.ref == 'refs/heads/rebuild/core-20261014'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            workers/core
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read public live source and check existing Cloudflare credential access without writes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: python3 workers/core/preflight.py
+      - name: Evaluate actual source compatibility without fabricating fresh timestamps
+        run: node workers/core/inspect_live.mjs
+      - name: Publish only redacted public diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: buy-radar-core-read-only-preflight
+          path: |
+            /tmp/radar-core-preflight/preflight.json
+            /tmp/radar-core-preflight/compatibility.json
+          retention-days: 7
+      - name: Explain scope
+        run: echo 'Read-only diagnostics only; green execution does not mean access, deployment or delivery passed. Read JSON statuses.' >> "$GITHUB_STEP_SUMMARY"
